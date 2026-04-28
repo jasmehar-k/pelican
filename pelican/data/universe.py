@@ -254,6 +254,16 @@ def build_universe_history(
                 "company": company,
             })
 
+    # Deduplicate by (ticker, entry_date) — the constituent seed and the changes table
+    # can both produce a window for the same entry date.  When there is a conflict,
+    # prefer the record that carries an exit_date (more information).
+    seen: dict[tuple[str, date], dict] = {}
+    for rec in records:
+        key = (rec["ticker"], rec["entry_date"])
+        if key not in seen or (rec["exit_date"] is not None and seen[key]["exit_date"] is None):
+            seen[key] = rec
+    records = list(seen.values())
+
     if not records:
         return pl.DataFrame(schema={
             "ticker": pl.Utf8,

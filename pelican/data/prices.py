@@ -6,6 +6,7 @@ import math
 from datetime import date
 from typing import Any
 
+import pandas as pd
 import polars as pl
 import yfinance as yf
 
@@ -51,7 +52,7 @@ def download_prices(
 
         # yfinance returns MultiIndex columns when multiple tickers requested.
         # Single-ticker requests return flat columns.
-        if isinstance(raw.columns, type(raw.columns)) and hasattr(raw.columns, "levels"):
+        if isinstance(raw.columns, pd.MultiIndex):
             for t in batch:
                 try:
                     sub = raw[t].dropna(how="all")
@@ -84,13 +85,21 @@ def _pandas_to_polars(df: Any, ticker: str) -> pl.DataFrame | None:
     """Convert a yfinance single-ticker pandas DataFrame to Polars."""
     required = {"Open", "High", "Low", "Close", "Volume"}
     if not required.issubset(set(df.columns)):
+        log.warning("missing required columns", ticker=ticker, cols=list(df.columns))
         return None
     df = df.reset_index()
     df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
     df = df.rename(columns={"Date": "date", "Open": "open", "High": "high",
                              "Low": "low", "Close": "close", "Volume": "volume"})
     pdf = df[["date", "open", "high", "low", "close", "volume"]].copy()
+    # Drop rows with NaN or zero close.
+    # NaN close propagates silently into the next day's log_return_1d via shift(1).
+    # Zero close (bankruptcy / erroneous tick) produces log(0/prev) = -inf.
+    pdf = pdf.dropna(subset=["close"])
+    pdf = pdf[pdf["close"] > 0]
     pdf.insert(0, "ticker", ticker)
+    if pdf.empty:
+        return None
     try:
         pl_df = pl.from_pandas(pdf)
     except Exception:
