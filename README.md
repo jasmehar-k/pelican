@@ -23,15 +23,14 @@ Pelican runs a closed research loop:
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    LangGraph Pipeline                   │
-│                                                         │
-│  Researcher → Codegen → Critic → Backtest → Reporter   │
-│       ↑                    │                    │       │
-│       └────────────────────┘ (retry on reject)  │       │
-│                                                  ↓       │
-│                              Research Log (DuckDB)       │
-└─────────────────────────────────────────────────────────┘
+                    LangGraph Pipeline                   
+                                                         
+  Researcher → Codegen → Critic → Backtest → Reporter   
+       ↑                    │                    │       
+       └────────────────────┘ (retry on reject)  │       
+                                                 ↓      
+                              Research Log (DuckDB)       
+
          ↕                              ↕
    FastAPI Backend              React Dashboard
    (SSE streaming)           (live node graph view)
