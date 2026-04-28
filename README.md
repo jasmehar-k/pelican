@@ -30,7 +30,7 @@ Pelican runs a closed research loop:
        └────────────────────┘ (retry on reject)  │       
                                                  ↓      
                               Research Log (DuckDB)       
-
+-----------------------------------------------------------
          ↕                              ↕
    FastAPI Backend              React Dashboard
    (SSE streaming)           (live node graph view)
