@@ -152,19 +152,21 @@ def run_backtest(
         )
 
         # Per-quintile equal-weighted forward returns.
-        quintile_returns: dict[str, float] = {}
+        # Use None (→ Polars null) instead of float("nan") so that drop_nulls()
+        # correctly removes missing periods in aggregate metric functions.
+        quintile_returns: dict[str, float | None] = {}
         for q in range(1, config.quintile_n + 1):
             q_df = cs.filter(pl.col("quintile") == str(q))
-            fwd = q_df["forward_return_21d"].drop_nulls()
-            quintile_returns[f"q{q}"] = float(fwd.mean()) if len(fwd) > 0 else float("nan")
+            fwd = q_df["forward_return_21d"].fill_nan(None).drop_nulls()
+            mean_fwd = float(fwd.mean()) if len(fwd) > 0 else None  # type: ignore[arg-type]
+            quintile_returns[f"q{q}"] = mean_fwd
 
-        q1_ret = quintile_returns.get("q1", float("nan"))
-        q5_ret = quintile_returns.get(f"q{config.quintile_n}", float("nan"))
-        nan = float("nan")
-        ls_gross = (
-            q5_ret - q1_ret
-            if not (math.isnan(q1_ret) or math.isnan(q5_ret))
-            else nan
+        q1_ret = quintile_returns.get("q1")
+        q5_ret = quintile_returns.get(f"q{config.quintile_n}")
+        ls_gross: float | None = (
+            q5_ret - q1_ret  # type: ignore[operator]
+            if (q1_ret is not None and q5_ret is not None)
+            else None
         )
 
         # Turnover.
@@ -177,10 +179,12 @@ def run_backtest(
 
         # Net return after transaction costs (applied to both legs symmetrically).
         cost = turnover * config.cost_bps / 10_000
-        ls_net = ls_gross - cost if not math.isnan(ls_gross) else float("nan")
+        ls_net: float | None = ls_gross - cost if ls_gross is not None else None
 
-        # IC for this period.
-        ic = spearman_ic(cs["score"], cs["forward_return_21d"])
+        # IC for this period — store None rather than float("nan") so that
+        # compute_ic_stats / compute_sharpe's drop_nulls() removes bad periods.
+        ic_raw = spearman_ic(cs["score"], cs["forward_return_21d"])
+        ic: float | None = ic_raw if not math.isnan(ic_raw) else None
 
         period_rows.append({
             "date": rebal_date,

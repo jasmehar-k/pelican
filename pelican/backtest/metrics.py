@@ -14,13 +14,18 @@ import math
 import polars as pl
 
 
+def _clean(s: pl.Series) -> pl.Series:
+    """Drop both Polars nulls and float NaN from a Float64 series."""
+    return s.fill_nan(None).drop_nulls()
+
+
 def spearman_ic(scores: pl.Series, returns: pl.Series) -> float:
     """Spearman rank correlation between signal scores and forward returns.
 
-    Both series must be aligned (same index / same order). NaN rows are
+    Both series must be aligned (same index / same order). NaN/null rows are
     dropped pairwise before ranking.
     """
-    df = pl.DataFrame({"s": scores, "r": returns}).drop_nulls()
+    df = pl.DataFrame({"s": scores.fill_nan(None), "r": returns.fill_nan(None)}).drop_nulls()
     if len(df) < 3:
         return float("nan")
     s_rank = df["s"].rank(method="average")
@@ -34,7 +39,7 @@ def spearman_ic(scores: pl.Series, returns: pl.Series) -> float:
 
 def compute_ic_stats(ic_series: pl.Series) -> dict[str, float]:
     """IC mean, IC IR (ICIR = mean/std), and t-stat from a time series of ICs."""
-    clean = ic_series.drop_nulls()
+    clean = _clean(ic_series)
     n = len(clean)
     if n < 2:
         return {"ic_mean": float("nan"), "icir": float("nan"), "ic_tstat": float("nan")}
@@ -51,7 +56,7 @@ def compute_sharpe(returns: pl.Series, periods_per_year: int = 12) -> float:
     `returns` is a Series of period returns (one per rebalance period).
     `periods_per_year` = 12 for monthly rebalancing.
     """
-    clean = returns.drop_nulls()
+    clean = _clean(returns)
     if len(clean) < 2:
         return float("nan")
     mean = float(clean.mean())  # type: ignore[arg-type]
@@ -63,7 +68,7 @@ def compute_sharpe(returns: pl.Series, periods_per_year: int = 12) -> float:
 
 def compute_max_drawdown(returns: pl.Series) -> float:
     """Maximum peak-to-trough drawdown from a series of period returns."""
-    clean = returns.drop_nulls()
+    clean = _clean(returns)
     if len(clean) == 0:
         return float("nan")
     cumulative = (1.0 + clean).cum_prod()
