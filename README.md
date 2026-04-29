@@ -13,9 +13,9 @@ lets you browse signals, inspect backtest results, and monitor the agent pipelin
 ┌─────────────────────────────────────────────────────────────────┐
 │                        Agent Pipeline                           │
 │                                                                 │
-│  Research Theme ──► Researcher ──► Coder ──► Critic ──► Signal │
-│                         ▲                       │    Registry  │
-│                         └─────── reject ────────┘              │
+│  Research Theme ──► Researcher ──► Coder ──► Critic ──► Signal  │
+│                         ▲                       │    Registry   │
+│                         └─────── reject ────────┘               │
 │                                                                 │
 │                    (LangGraph state machine)                    │
 └─────────────────────────────────────────────────────────────────┘
@@ -23,23 +23,23 @@ lets you browse signals, inspect backtest results, and monitor the agent pipelin
           ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Backtest Engine                              │
-│  Polars panel DataFrame ──► cross-sectional rank ──► quintile  │
-│  portfolios ──► forward returns ──► IC / Sharpe / drawdown     │
+│  Polars panel DataFrame ──► cross-sectional rank ──► quintile   │
+│  portfolios ──► forward returns ──► IC / Sharpe / drawdown      │
 │                    (point-in-time correct, vectorized)          │
 └─────────────────────────────────────────────────────────────────┘
           │ signal scores + metrics
           ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                 Portfolio Construction                          │
-│  Signal combiner (IC-weighted z-scores) ──► CVXPy optimizer    │
-│  ──► weights (long-only or L/S, sector-neutral, risk-capped)   │
+│  Signal combiner (IC-weighted z-scores) ──► CVXPy optimizer     │
+│  ──► weights (long-only or L/S, sector-neutral, risk-capped)    │
 └─────────────────────────────────────────────────────────────────┘
           │
           ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │              FastAPI Backend + React Frontend                   │
-│  /signals   /backtest   /portfolio   /agents                   │
-│  Signal browser · Equity curves · Agent activity log           │
+│  /signals   /backtest   /portfolio   /agents                    │
+│  Signal browser · Equity curves · Agent activity log            │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
