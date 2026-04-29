@@ -108,6 +108,7 @@ def run_backtest(
     period_rows: list[dict] = []
     ic_rows: list[dict] = []
     prev_longs: set[str] = set()
+    prev_shorts: set[str] = set()
     turnovers: list[float] = []
 
     for rebal_date in rebal_dates:
@@ -169,15 +170,21 @@ def run_backtest(
             else None
         )
 
-        # Turnover.
+        # Turnover — average of long (Q5) and short (Q1) book turnover.
         curr_longs: set[str] = set(
             cs.filter(pl.col("quintile") == str(config.quintile_n))["ticker"].to_list()
         )
-        turnover = _turnover(prev_longs, curr_longs)
+        curr_shorts: set[str] = set(
+            cs.filter(pl.col("quintile") == "1")["ticker"].to_list()
+        )
+        long_to = _turnover(prev_longs, curr_longs)
+        short_to = _turnover(prev_shorts, curr_shorts)
+        turnover = (long_to + short_to) / 2.0
         turnovers.append(turnover)
         prev_longs = curr_longs
+        prev_shorts = curr_shorts
 
-        # Net return after transaction costs (applied to both legs symmetrically).
+        # Net return after transaction costs on both legs.
         cost = turnover * config.cost_bps / 10_000
         ls_net: float | None = ls_gross - cost if ls_gross is not None else None
 
