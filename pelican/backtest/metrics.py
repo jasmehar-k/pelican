@@ -16,6 +16,8 @@ import polars as pl
 
 def _clean(s: pl.Series) -> pl.Series:
     """Drop both Polars nulls and float NaN from a Float64 series."""
+    if s.dtype == pl.Null:
+        return pl.Series([], dtype=pl.Float64)
     return s.fill_nan(None).drop_nulls()
 
 

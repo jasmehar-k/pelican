@@ -105,6 +105,25 @@ def run_backtest(
     if panel.is_empty():
         raise ValueError("No price data found for the backtest period.")
 
+    # Fetch fundamentals panel once if the signal needs it.
+    fund_panel: pl.DataFrame | None = None
+    if sig.spec.requires_fundamentals:
+        fund_panel = store.query(
+            """
+            SELECT ticker, available_date, market_cap, pe_ratio, pb_ratio,
+                   roe, debt_to_equity
+            FROM fundamentals
+            WHERE available_date >= ? AND available_date <= ?
+            ORDER BY ticker, available_date
+            """,
+            [panel_start, config.end],
+        )
+        if fund_panel.is_empty():
+            log.warning(
+                "no fundamentals data found — fundamental signal will have no scores",
+                signal=signal_name,
+            )
+
     period_rows: list[dict] = []
     ic_rows: list[dict] = []
     prev_longs: set[str] = set()
@@ -123,6 +142,19 @@ def run_backtest(
 
         if cs.is_empty():
             continue
+
+        # Point-in-time join of fundamentals: use the most recent row whose
+        # available_date <= rebal_date so no future data leaks in.
+        if fund_panel is not None and not fund_panel.is_empty():
+            pit_fund = (
+                fund_panel
+                .filter(pl.col("available_date") <= rebal_date)
+                .sort("available_date")
+                .group_by("ticker")
+                .last()
+                .drop("available_date")
+            )
+            cs = cs.join(pit_fund, on="ticker", how="left")
 
         # Compute signal scores.
         try:
@@ -208,7 +240,9 @@ def run_backtest(
         raise ValueError("Backtest produced no periods — check data coverage and date range.")
 
     period_df = pl.DataFrame(period_rows)
-    ic_df = pl.DataFrame(ic_rows)
+    ic_df = pl.DataFrame(ic_rows).with_columns(
+        pl.col("ic").cast(pl.Float64)
+    )
 
     ic_stats = compute_ic_stats(ic_df["ic"])
     sharpe_gross = compute_sharpe(period_df["ls_gross"])

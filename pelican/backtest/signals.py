@@ -23,6 +23,14 @@ class SignalSpec:
     # Minimum lookback in calendar days needed to compute this signal.
     # The engine will fetch this many extra days of history before rebal_date.
     lookback_days: int = 504
+    # Whether the engine should join the fundamentals panel into the cross-section.
+    requires_fundamentals: bool = False
+    # Which fundamental columns this signal reads (for validation).
+    data_deps: tuple[str, ...] = ()
+    # Expected IC range (lo, hi) as a rough sanity-check reference.
+    expected_ic_range: tuple[float, float] = (-0.10, 0.10)
+    # Rebalance frequency of the underlying data.
+    data_frequency: str = "monthly"
 
 
 # A signal function receives the cross-section panel (all tickers, all history
@@ -102,19 +110,6 @@ def build_cross_section_features(
 # ---------------------------------------------------------------------------
 
 @register(SignalSpec(
-    name="MOM_1_12",
-    description="12-1 month momentum (Jegadeesh & Titman 1993). "
-                "Long recent winners, short recent losers. "
-                "Skips the most recent month to avoid short-term reversal.",
-    lookback_days=504,
-))
-def _mom_1_12(cs: pl.DataFrame) -> pl.Series:
-    # close_21d is price 1 month ago; close_252d is price ~12 months ago.
-    # Signal = return over months 2–12 (skipping most recent month).
-    return (cs["close_21d"] / cs["close_252d"] - 1.0).alias("MOM_1_12")
-
-
-@register(SignalSpec(
     name="HML_REVERSAL",
     description="2-year price reversal as a value proxy (De Bondt & Thaler 1985). "
                 "Negated so high signal → cheap / value tilt.",
@@ -122,13 +117,3 @@ def _mom_1_12(cs: pl.DataFrame) -> pl.Series:
 ))
 def _hml_reversal(cs: pl.DataFrame) -> pl.Series:
     return (-(cs["close"] / cs["close_504d"] - 1.0)).alias("HML_REVERSAL")
-
-
-@register(SignalSpec(
-    name="LOW_VOL",
-    description="Negative 63-day realized volatility (Ang et al. 2006). "
-                "Low-vol stocks earn positive risk-adjusted returns.",
-    lookback_days=126,
-))
-def _low_vol(cs: pl.DataFrame) -> pl.Series:
-    return (-cs["vol_63d"]).alias("LOW_VOL")
