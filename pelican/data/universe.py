@@ -16,6 +16,15 @@ _INCEPTION = date(1993, 1, 29)
 
 _WIKI_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
 
+_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
 
 # ---------------------------------------------------------------------------
 # HTML table parser (stdlib, no BeautifulSoup)
@@ -94,7 +103,7 @@ def fetch_sp500_constituents() -> pl.DataFrame:
 
     Returns a DataFrame with columns: ticker, company, date_added.
     """
-    resp = httpx.get(_WIKI_URL, follow_redirects=True, timeout=30)
+    resp = httpx.get(_WIKI_URL, headers=_HEADERS, follow_redirects=True, timeout=30)
     resp.raise_for_status()
     tables = _parse_tables(resp.text)
 
@@ -129,7 +138,7 @@ def fetch_sp500_changes() -> pl.DataFrame:
     Returns a DataFrame with: date, added_ticker, added_company,
     removed_ticker, removed_company.
     """
-    resp = httpx.get(_WIKI_URL, follow_redirects=True, timeout=30)
+    resp = httpx.get(_WIKI_URL, headers=_HEADERS, follow_redirects=True, timeout=30)
     resp.raise_for_status()
     tables = _parse_tables(resp.text)
 
