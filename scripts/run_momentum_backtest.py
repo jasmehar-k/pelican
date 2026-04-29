@@ -83,10 +83,15 @@ def plot_ic_decay(result: BacktestResult, output_path: Path) -> None:
 
     dates = result.ic_series["date"].to_list()
     ics = result.ic_series["ic"].to_list()
+    # Replace None with 0.0 for bar heights; colour grey for missing periods.
+    bar_heights = [ic if ic is not None else 0.0 for ic in ics]
+    colors = [
+        "#aaaaaa" if ic is None else ("#d62728" if ic < 0 else "#2ca02c")
+        for ic in ics
+    ]
 
     fig, ax = plt.subplots(figsize=(10, 4))
-    colors = ["#d62728" if ic < 0 else "#2ca02c" for ic in ics]
-    ax.bar(dates, ics, color=colors, alpha=0.7, width=20)
+    ax.bar(dates, bar_heights, color=colors, alpha=0.7, width=20)
     ax.axhline(0, color="black", linewidth=0.8)
     ax.axhline(result.ic_mean, color="navy", linewidth=1.5, linestyle="--",
                label=f"mean IC = {result.ic_mean:.3f}")
@@ -129,14 +134,17 @@ def plot_quintile_spread(result: BacktestResult, output_path: Path) -> None:
     # Bottom panel: L/S spread gross vs net
     cum_gross = _safe_cumprod(pr["ls_gross"]) - 1.0
     cum_net = _safe_cumprod(pr["ls_net"]) - 1.0
-    ax2.plot(dates, cum_gross.to_list(), color="steelblue", label="L/S gross", linewidth=1.5)
+    cum_gross_vals = cum_gross.to_list()
+    cum_net_vals = cum_net.to_list()
+    ax2.plot(dates, cum_gross_vals, color="steelblue", label="L/S gross", linewidth=1.5)
     ax2.plot(
-        dates, cum_net.to_list(),
+        dates, cum_net_vals,
         color="darkorange", label="L/S net", linewidth=1.5, linestyle="--",
     )
     ax2.axhline(0, color="black", linewidth=0.5)
-    ax2.fill_between(dates, cum_gross.to_list(), 0,
-                     where=[v > 0 for v in cum_gross.to_list()],
+    safe_gross = [v if v is not None else 0.0 for v in cum_gross_vals]
+    ax2.fill_between(dates, safe_gross, 0,
+                     where=[v > 0 for v in safe_gross],
                      alpha=0.08, color="steelblue")
     ax2.set_title(
         f"L/S spread  |  Sharpe gross={result.sharpe_gross:.2f}"
