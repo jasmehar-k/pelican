@@ -2,7 +2,7 @@
 
 **Agentic Factor Research Platform**
 
-Pelican is a full-stack quantitative research system where LLM agents autonomously discover, implement, and backtest novel alpha signals from academic literature and alternative data. It combines a vectorized cross-sectional backtesting engine, a CVXPy portfolio optimizer, and a LangGraph agent pipeline — all wired together into a live research dashboard.
+Pelican is a full-stack quantitative research system where LLM agents autonomously discover, implement, and backtest novel alpha signals from academic literature and alternative data. It combines a vectorized cross-sectional backtesting engine, a CVXPy portfolio optimizer, and a LangGraph agent pipeline, all wired together into a live research dashboard.
 
 ---
 
@@ -38,7 +38,7 @@ Pelican runs a closed research loop:
 
 **Data layer:** Polars + DuckDB, point-in-time correct, S&P 500 universe, daily OHLCV back to 2014
 
-**Agent orchestration:** LangGraph with SSE streaming — watch Researcher → Codegen → Critic nodes light up in real time
+**Agent orchestration:** LangGraph with SSE streaming: watch Researcher → Codegen → Critic nodes light up in real time
 
 **LLM provider:** OpenRouter (`meta-llama/llama-3.3-70b-instruct:free`)
 
