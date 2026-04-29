@@ -29,6 +29,18 @@ CREATE TABLE IF NOT EXISTS prices (
     forward_return_21d  DOUBLE,
     PRIMARY KEY (ticker, date)
 );
+
+CREATE TABLE IF NOT EXISTS fundamentals (
+    ticker          VARCHAR NOT NULL,
+    available_date  DATE    NOT NULL,
+    period_end      DATE    NOT NULL,
+    market_cap      DOUBLE,
+    pe_ratio        DOUBLE,
+    pb_ratio        DOUBLE,
+    roe             DOUBLE,
+    debt_to_equity  DOUBLE,
+    PRIMARY KEY (ticker, period_end)
+);
 """
 
 
@@ -50,8 +62,10 @@ class DataStore:
         # Register the Polars DataFrame as a DuckDB view then upsert.
         # DuckDB can read Polars DataFrames directly via the Arrow protocol.
         self._conn.register("_write_tmp", df.to_arrow())
-        self._conn.execute(f"INSERT OR REPLACE INTO {table} SELECT * FROM _write_tmp")
-        self._conn.unregister("_write_tmp")
+        try:
+            self._conn.execute(f"INSERT OR REPLACE INTO {table} SELECT * FROM _write_tmp")
+        finally:
+            self._conn.unregister("_write_tmp")
         return len(df)
 
     def query(self, sql: str, params: Any = None) -> pl.DataFrame:

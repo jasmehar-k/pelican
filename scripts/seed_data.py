@@ -15,20 +15,33 @@ import time
 from datetime import date
 from pathlib import Path
 
+from pelican.utils.config import get_settings
 
-def parse_args() -> argparse.Namespace:
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    settings = get_settings()
     parser = argparse.ArgumentParser(description="Seed Pelican data store")
-    parser.add_argument("--start", default="2014-01-01", help="Start date (YYYY-MM-DD)")
-    parser.add_argument("--end", default="2024-01-01", help="End date (YYYY-MM-DD)")
+    parser.add_argument(
+        "--start",
+        default=settings.backtest_start.isoformat(),
+        help="Start date (YYYY-MM-DD)",
+    )
+    parser.add_argument(
+        "--end",
+        default=settings.backtest_end.isoformat(),
+        help="End date (YYYY-MM-DD)",
+    )
     parser.add_argument("--batch-size", type=int, default=50, help="Tickers per yfinance batch")
     parser.add_argument(
-        "--db-path", default="./data/pelican.duckdb", help="Path to DuckDB file"
+        "--db-path",
+        default=str(settings.duckdb_path),
+        help="Path to DuckDB file",
     )
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
-def main() -> None:
-    args = parse_args()
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
 
     # Lazy imports so the script fails fast on bad args before loading heavy deps.
     from pelican.utils.logging import configure_logging, get_logger
