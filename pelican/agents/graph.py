@@ -16,7 +16,7 @@ from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
-from pelican.agents.coder import coder_node
+from pelican.agents.coder import _make_coder_node
 from pelican.agents.critic import _make_critic_node
 from pelican.agents.state import AgentState
 from pelican.backtest.engine import BacktestConfig
@@ -25,6 +25,7 @@ from pelican.backtest.engine import BacktestConfig
 def build_graph(
     store: Any,
     backtest_config: BacktestConfig | None = None,
+    model: str | None = None,
 ):
     """Build and compile the Coder → Critic graph.
 
@@ -48,7 +49,7 @@ def build_graph(
     critic_node = _make_critic_node(store, backtest_config)
 
     builder: StateGraph = StateGraph(AgentState)
-    builder.add_node("coder", coder_node)
+    builder.add_node("coder", _make_coder_node(model=model))
     builder.add_node("critic", critic_node)
     builder.add_edge(START, "coder")
     builder.add_edge("coder", "critic")

@@ -33,6 +33,12 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--start", default="2024-01-01", help="Backtest start date (YYYY-MM-DD)")
     p.add_argument("--end", default="2024-12-31", help="Backtest end date (YYYY-MM-DD)")
     p.add_argument("--db-path", default=str(s.duckdb_path))
+    p.add_argument(
+        "--model",
+        default=None,
+        help="OpenRouter model ID (default: settings.openrouter_model). "
+             "Example: deepseek/deepseek-chat:free",
+    )
     return p.parse_args(argv)
 
 
@@ -51,7 +57,7 @@ def main(argv=None) -> None:
         end=date.fromisoformat(args.end),
     )
 
-    graph = build_graph(store, config)
+    graph = build_graph(store, config, model=args.model)
     state = initial_state(args.theme)
 
     print(f"\nTheme: {args.theme}")
