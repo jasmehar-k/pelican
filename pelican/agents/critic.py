@@ -7,17 +7,18 @@ Runs a 1-year backtest on the generated signal function and rejects it if:
   - IC t-stat < IC_TSTAT_THRESHOLD (1.5)
   - net Sharpe < SHARPE_THRESHOLD (0.3)
 
-Acceptance does not mean the signal is great — it means it clears the minimum
-statistical bar to be worth keeping.  The feedback string explains the decision.
+Pre-flight check: if the signal requires fundamentals, the critic queries the DB
+for the available date range and returns a clear error rather than silently
+skipping all periods.  This prevents the misleading "no periods" error when
+the backtest window predates the fundamentals data.
 """
 
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
+from dataclasses import replace
+from datetime import date
 from typing import Any
-
-import polars as pl
 
 from pelican.agents.state import AgentState
 from pelican.agents.tools.backtest_tool import run_backtest_with_fn
@@ -30,6 +31,22 @@ IC_TSTAT_THRESHOLD = 1.5
 SHARPE_THRESHOLD = 0.3
 
 log = get_logger(__name__)
+
+
+def _fundamentals_coverage(store: Any) -> tuple[date, date] | None:
+    """Return (earliest, latest) available_date from the fundamentals table, or None."""
+    try:
+        r = store.query(
+            "SELECT MIN(available_date) AS lo, MAX(available_date) AS hi FROM fundamentals"
+        )
+        if r.is_empty():
+            return None
+        lo, hi = r["lo"][0], r["hi"][0]
+        if lo is None or hi is None:
+            return None
+        return lo, hi
+    except Exception:
+        return None
 
 
 def _make_critic_node(store: Any, config: BacktestConfig):
@@ -56,14 +73,54 @@ def _make_critic_node(store: Any, config: BacktestConfig):
                 "sharpe_net": None,
             }
 
+        requires_fund = needs_fundamentals(code)
+
+        # Pre-flight: verify fundamentals coverage if the signal needs them.
+        effective_config = config
+        if requires_fund:
+            coverage = _fundamentals_coverage(store)
+            if coverage is None:
+                return {
+                    **state,
+                    "decision": "reject",
+                    "feedback": (
+                        "signal uses fundamental columns (roe / debt_to_equity / pe_ratio / "
+                        "pb_ratio / market_cap) but no fundamentals data found in the database. "
+                        "Run: python scripts/seed_fundamentals.py"
+                    ),
+                    "ic_tstat": None,
+                    "sharpe_net": None,
+                }
+            fund_lo, fund_hi = coverage
+            if config.end < fund_lo or config.start > fund_hi:
+                return {
+                    **state,
+                    "decision": "reject",
+                    "feedback": (
+                        f"backtest window {config.start} → {config.end} has no overlap with "
+                        f"available fundamentals ({fund_lo} → {fund_hi}). "
+                        f"Re-run with --start {fund_lo} or later."
+                    ),
+                    "ic_tstat": None,
+                    "sharpe_net": None,
+                }
+            if config.start < fund_lo:
+                # Trim start to first available period so we get real scores.
+                effective_config = replace(config, start=fund_lo)
+                log.info(
+                    "adjusted backtest start for fundamentals coverage",
+                    original=config.start,
+                    adjusted=fund_lo,
+                )
+
         spec = SignalSpec(
             name="_critic_eval",
             description=state["theme"],
-            requires_fundamentals=needs_fundamentals(code),
+            requires_fundamentals=requires_fund,
         )
 
         try:
-            result = run_backtest_with_fn(fn, spec, config, store)
+            result = run_backtest_with_fn(fn, spec, effective_config, store)
         except Exception as exc:
             log.warning("critic backtest failed", error=str(exc))
             return {

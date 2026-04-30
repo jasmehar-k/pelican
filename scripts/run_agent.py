@@ -30,8 +30,8 @@ def parse_args(argv=None) -> argparse.Namespace:
     s = get_settings()
     p = argparse.ArgumentParser(description="Run the Coder → Critic agent pipeline")
     p.add_argument("--theme", required=True, help="Natural language factor description")
-    p.add_argument("--start", default="2024-01-01", help="Backtest start date (YYYY-MM-DD)")
-    p.add_argument("--end", default="2024-12-31", help="Backtest end date (YYYY-MM-DD)")
+    p.add_argument("--start", default="2024-10-01", help="Backtest start date (YYYY-MM-DD)")
+    p.add_argument("--end", default="2025-11-01", help="Backtest end date (YYYY-MM-DD)")
     p.add_argument("--db-path", default=str(s.duckdb_path))
     p.add_argument(
         "--model",

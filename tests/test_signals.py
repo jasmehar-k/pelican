@@ -405,6 +405,64 @@ class TestCriticNode:
 
         assert result["decision"] == "reject"
 
+    def test_rejects_when_fundamentals_not_in_db(self):
+        store, config = self._make_store_config()
+        # store.query returns empty frame → no fundamentals in DB.
+        store.query.return_value = MagicMock(
+            is_empty=lambda: True,
+        )
+        critic = _make_critic_node(store, config)
+        result = critic(_make_state(generated_code=FUNDAMENTAL_CODE))
+        assert result["decision"] == "reject"
+        assert "no fundamentals data" in result["feedback"]
+
+    def test_rejects_when_window_outside_fundamentals_range(self):
+        from datetime import date
+        from pelican.backtest.engine import BacktestConfig
+
+        store = MagicMock()
+        # Fundamentals only available from 2024-09 onwards.
+        fund_row = MagicMock()
+        fund_row.is_empty.return_value = False
+        fund_row.__getitem__ = lambda self, key: {
+            "lo": [date(2024, 9, 14)],
+            "hi": [date(2026, 5, 15)],
+        }[key]
+        store.query.return_value = fund_row
+
+        # Backtest ends before fundamentals start.
+        config = BacktestConfig(start=date(2023, 1, 1), end=date(2024, 1, 1))
+        critic = _make_critic_node(store, config)
+        result = critic(_make_state(generated_code=FUNDAMENTAL_CODE))
+        assert result["decision"] == "reject"
+        assert "no overlap" in result["feedback"]
+        assert "2024-09-14" in result["feedback"]
+
+    def test_trims_start_when_partially_outside_fundamentals_range(self):
+        from datetime import date
+        from pelican.backtest.engine import BacktestConfig
+
+        store = MagicMock()
+        fund_lo = date(2024, 9, 14)
+        fund_hi = date(2026, 5, 15)
+        fund_row = MagicMock()
+        fund_row.is_empty.return_value = False
+        fund_row.__getitem__ = lambda self, key: {"lo": [fund_lo], "hi": [fund_hi]}[key]
+        store.query.return_value = fund_row
+
+        # Window starts before fundamentals but ends well within them.
+        config = BacktestConfig(start=date(2024, 1, 1), end=date(2025, 6, 1))
+        critic = _make_critic_node(store, config)
+
+        good = _make_backtest_result(ic_tstat=2.0, sharpe_net=0.6)
+        with patch("pelican.agents.critic.run_backtest_with_fn", return_value=good) as mock_bt:
+            result = critic(_make_state(generated_code=FUNDAMENTAL_CODE))
+
+        # Backtest should have been called with start trimmed to fund_lo.
+        called_config = mock_bt.call_args[0][2]  # 3rd positional arg is config
+        assert called_config.start == fund_lo
+        assert result["decision"] == "accept"
+
     def test_metrics_present_on_accept(self):
         store, config = self._make_store_config()
         critic = _make_critic_node(store, config)
