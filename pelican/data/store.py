@@ -41,6 +41,19 @@ CREATE TABLE IF NOT EXISTS fundamentals (
     debt_to_equity  DOUBLE,
     PRIMARY KEY (ticker, period_end)
 );
+
+CREATE TABLE IF NOT EXISTS research_log (
+    run_id             VARCHAR,
+    ts                 TIMESTAMPTZ DEFAULT current_timestamp,
+    theme              VARCHAR,
+    arxiv_ids          VARCHAR[],
+    signal_hypothesis  TEXT,
+    generated_code     TEXT,
+    decision           VARCHAR,
+    ic_tstat           DOUBLE,
+    sharpe_net         DOUBLE,
+    feedback           TEXT
+);
 """
 
 
@@ -53,6 +66,27 @@ class DataStore:
 
     def init_schema(self) -> None:
         self._conn.execute(_SCHEMA_SQL)
+
+    def log_run(self, state: dict[str, Any]) -> None:
+        self._conn.execute(
+            """
+            INSERT INTO research_log (
+                run_id, theme, arxiv_ids, signal_hypothesis, generated_code,
+                decision, ic_tstat, sharpe_net, feedback
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                state.get("run_id"),
+                state.get("theme"),
+                state.get("arxiv_ids") or [],
+                state.get("signal_hypothesis"),
+                state.get("generated_code"),
+                state.get("decision"),
+                state.get("ic_tstat"),
+                state.get("sharpe_net"),
+                state.get("feedback"),
+            ],
+        )
 
     def write(self, df: pl.DataFrame, table: str) -> int:
         """Insert-or-replace rows from a Polars DataFrame into `table`.

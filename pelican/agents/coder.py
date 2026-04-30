@@ -76,8 +76,8 @@ def _extract_code(text: str) -> str | None:
     return match.group(1).strip() if match else None
 
 
-def _build_user_message(theme: str, errors: list[str]) -> str:
-    parts = [f"Factor description: {theme}"]
+def _build_user_message(description: str, errors: list[str]) -> str:
+    parts = [f"Factor description: {description}"]
     if errors:
         recent = errors[-3:]
         error_block = "\n".join(f"  - {e}" for e in recent)
@@ -113,7 +113,10 @@ def _make_coder_node(
             if on_attempt_start:
                 on_attempt_start(attempt)
             log.info("coder attempt", attempt=attempt, theme=state["theme"])
-            user_msg = _build_user_message(state["theme"], errors)
+            user_msg = _build_user_message(
+                state.get("signal_hypothesis") or state["theme"],
+                errors,
+            )
 
             try:
                 response = llm.invoke([

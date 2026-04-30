@@ -42,6 +42,8 @@ def parse_args(argv=None) -> argparse.Namespace:
                    help="OpenRouter model ID, e.g. deepseek/deepseek-chat:free")
     p.add_argument("--no-stream", action="store_true",
                    help="Disable token streaming (plain output)")
+    p.add_argument("--no-research", action="store_true",
+                   help="Skip the researcher node and run Coder → Critic directly")
     return p.parse_args(argv)
 
 
@@ -49,8 +51,7 @@ def parse_args(argv=None) -> argparse.Namespace:
 # Rich streaming display
 # ---------------------------------------------------------------------------
 
-def _run_streaming(args, store, config) -> dict:
-    from rich.columns import Columns
+def _run_streaming(args, store, config, with_researcher: bool = True) -> dict:
     from rich.console import Console
     from rich.live import Live
     from rich.panel import Panel
@@ -64,7 +65,7 @@ def _run_streaming(args, store, config) -> dict:
     # Shared mutable state accessed from callbacks + main thread.
     _buf: list[str] = []
     _attempt: list[int] = [0]
-    _phase: list[str] = ["generating"]  # generating | validating | backtesting | done
+    _phase: list[str] = ["searching" if with_researcher else "generating"]
     _lock = threading.Lock()
 
     def on_attempt_start(attempt_num: int) -> None:
@@ -94,6 +95,11 @@ def _run_streaming(args, store, config) -> dict:
                               line_numbers=False, word_wrap=True)
                 return Panel(body, title=title, border_style="cyan", padding=(0, 1))
 
+            if phase == "searching":
+                spinner = Spinner("dots", text=Text(" Searching arXiv…", style="bold"))
+                return Panel(spinner, title="[bold magenta]Researcher: searching[/]",
+                             border_style="magenta", padding=(0, 1))
+
             if phase == "validating":
                 return Panel(
                     Syntax(code, "python", theme="monokai",
@@ -115,13 +121,14 @@ def _run_streaming(args, store, config) -> dict:
         model=args.model,
         on_token=on_token,
         on_attempt_start=on_attempt_start,
+        with_researcher=with_researcher,
     )
     state = initial_state(args.theme)
 
     result: dict = {}
 
     with Live(LiveDisplay(), console=console, refresh_per_second=15,
-              vertical_overflow="visible") as live:
+              vertical_overflow="visible"):
 
         def _invoke():
             nonlocal result
@@ -204,9 +211,9 @@ def _run_streaming(args, store, config) -> dict:
 # Plain (no-stream) fallback
 # ---------------------------------------------------------------------------
 
-def _run_plain(args, store, config) -> dict:
+def _run_plain(args, store, config, with_researcher: bool = True) -> dict:
     configure_logging(dev=True)
-    graph = build_graph(store, config, model=args.model)
+    graph = build_graph(store, config, model=args.model, with_researcher=with_researcher)
     state = initial_state(args.theme)
 
     print(f"\nTheme: {args.theme}")
@@ -243,15 +250,18 @@ def main(argv=None) -> None:
         sys.exit(1)
 
     store = DataStore(db_path)
+    store.init_schema()
     config = BacktestConfig(
         start=date.fromisoformat(args.start),
         end=date.fromisoformat(args.end),
     )
 
     if args.no_stream:
-        result = _run_plain(args, store, config)
+        result = _run_plain(args, store, config, with_researcher=not args.no_research)
     else:
-        result = _run_streaming(args, store, config)
+        result = _run_streaming(args, store, config, with_researcher=not args.no_research)
+
+    store.log_run(result)
 
     store.close()
     sys.exit(0 if result.get("decision") == "accept" else 1)

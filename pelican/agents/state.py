@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import Any, TypedDict
 
 
 class AgentState(TypedDict):
@@ -13,3 +13,7 @@ class AgentState(TypedDict):
     feedback: str | None        # Critic's explanation
     ic_tstat: float | None      # backtest IC t-stat from Critic
     sharpe_net: float | None    # backtest net Sharpe from Critic
+    papers: list[dict[str, Any]]
+    signal_hypothesis: str | None
+    arxiv_ids: list[str]
+    run_id: str

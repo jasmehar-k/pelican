@@ -15,10 +15,9 @@ Given a research theme, you will:
    - `citations`: list of arxiv_id strings
 
 Available data fields:
-- Price: `open`, `high`, `low`, `close`, `volume`, `log_return_1d`
-- Fundamentals (from 10-K/10-Q, lagged by filing date): `net_income`, `revenue`,
-  `total_assets`, `total_debt`, `operating_cash_flow`, `capex`, `book_equity`
-- Sentiment: `news_sentiment_score` (daily, -1 to +1)
+- Price: `close`, `close_21d`, `close_63d`, `close_126d`, `close_252d`,
+  `close_504d`, `log_return_1d`, `vol_21d`, `vol_63d`
+- Fundamentals: `market_cap`, `pe_ratio`, `pb_ratio`, `roe`, `debt_to_equity`
 
 Constraints:
 - Signal must be computable with only the fields listed above

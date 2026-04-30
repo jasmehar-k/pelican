@@ -1,14 +1,90 @@
+"""arXiv search tool for the Researcher agent.
+
+Queries the arXiv Atom export API and returns a compact list of paper summaries.
+The helper rate-limits requests according to the configured arxiv_rate_limit_seconds
+setting so repeated agent runs do not violate the free API's terms.
 """
-arXiv search tool for the Researcher agent.
 
-Queries the arXiv REST API (api.arxiv.org/search/) — no API key required.
-Searches categories: q-fin.PM (portfolio mgmt), q-fin.ST (statistical finance),
-econ.GN, and cs.LG (ML methods applied to finance).
+from __future__ import annotations
 
-Returns a list of SearchResult dicts: {title, authors, abstract, arxiv_id, url}.
-Abstracts are truncated to 800 chars to fit comfortably in the LLM context window.
-The Researcher uses these results to ground SignalSpec hypotheses in peer-reviewed
-literature before passing to the Coder.
+import re
+import time
+import xml.etree.ElementTree as ET
+from typing import TypedDict
 
-No external API key needed. Rate limit: 1 req/3s per arXiv's terms of service.
-"""
+import httpx
+
+from pelican.utils.config import get_settings
+
+ARXIV_API_URL = "https://export.arxiv.org/api/query"
+ARXIV_CATEGORIES = "cat:q-fin.PM OR cat:q-fin.ST OR cat:econ.GN OR cat:cs.LG"
+
+_last_req_time = 0.0
+
+
+class SearchResult(TypedDict):
+    title: str
+    authors: list[str]
+    abstract: str
+    arxiv_id: str
+    url: str
+
+
+def _rate_limit() -> None:
+    global _last_req_time
+    settings = get_settings()
+    now = time.monotonic()
+    elapsed = now - _last_req_time
+    wait = settings.arxiv_rate_limit_seconds - elapsed
+    if _last_req_time and wait > 0:
+        time.sleep(wait)
+    _last_req_time = time.monotonic()
+
+
+def _normalize_arxiv_id(raw_id: str) -> str:
+    arxiv_id = raw_id.rsplit("/", 1)[-1]
+    return re.sub(r"v\d+$", "", arxiv_id)
+
+
+def _parse_entry(entry: ET.Element, namespace: dict[str, str]) -> SearchResult:
+    title = (entry.findtext("atom:title", default="", namespaces=namespace) or "").strip()
+    abstract = (entry.findtext("atom:summary", default="", namespaces=namespace) or "").strip()
+    authors = [
+        (author.findtext("atom:name", default="", namespaces=namespace) or "").strip()
+        for author in entry.findall("atom:author", namespace)
+    ]
+    authors = [author for author in authors if author]
+    arxiv_id = _normalize_arxiv_id(
+        entry.findtext("atom:id", default="", namespaces=namespace) or ""
+    )
+    return {
+        "title": title,
+        "authors": authors,
+        "abstract": abstract[:800],
+        "arxiv_id": arxiv_id,
+        "url": f"https://arxiv.org/abs/{arxiv_id}",
+    }
+
+
+def search_arxiv(query: str, max_results: int = 10) -> list[SearchResult]:
+    _rate_limit()
+    search_query = f"({query}) AND ({ARXIV_CATEGORIES})"
+    response = httpx.get(
+        ARXIV_API_URL,
+        params={
+            "search_query": search_query,
+            "start": 0,
+            "max_results": max_results,
+            "sortBy": "relevance",
+            "sortOrder": "descending",
+        },
+        timeout=30,
+    )
+    response.raise_for_status()
+
+    root = ET.fromstring(response.text)
+    namespace = {"atom": "http://www.w3.org/2005/Atom"}
+    entries = root.findall("atom:entry", namespace)
+    if not entries:
+        return []
+    return [_parse_entry(entry, namespace) for entry in entries]
