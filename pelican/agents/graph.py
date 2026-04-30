@@ -11,6 +11,7 @@ contains the generated code, decision, and backtest metrics.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date, timedelta
 from typing import Any
 
@@ -26,6 +27,8 @@ def build_graph(
     store: Any,
     backtest_config: BacktestConfig | None = None,
     model: str | None = None,
+    on_token: Callable[[str], None] | None = None,
+    on_attempt_start: Callable[[int], None] | None = None,
 ):
     """Build and compile the Coder → Critic graph.
 
@@ -49,7 +52,11 @@ def build_graph(
     critic_node = _make_critic_node(store, backtest_config)
 
     builder: StateGraph = StateGraph(AgentState)
-    builder.add_node("coder", _make_coder_node(model=model))
+    builder.add_node("coder", _make_coder_node(
+        model=model,
+        on_token=on_token,
+        on_attempt_start=on_attempt_start,
+    ))
     builder.add_node("critic", critic_node)
     builder.add_edge(START, "coder")
     builder.add_edge("coder", "critic")
