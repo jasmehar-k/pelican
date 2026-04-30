@@ -314,3 +314,194 @@ class TestOptimizer:
         result = optimize(alpha, rm)
         assert result.weights is not None
         assert not np.any(np.isnan(result.weights))
+
+
+# ---------------------------------------------------------------------------
+# Edge-case / failure-mode tests
+# ---------------------------------------------------------------------------
+
+class TestOptimizerEdgeCases:
+    """
+    Covers the four production failure modes:
+      1. Optimizer infeasible (too-tight cap → fallback path)
+      2. Weights don't sum to zero (dollar neutrality broken)
+      3. Covariance matrix not positive definite
+      4. Turnover constraint silently ignored
+    """
+
+    # ── 1. Infeasibility ────────────────────────────────────────────────────
+
+    def test_infeasible_when_cap_impossible(self):
+        # max_weight=0.01 with n=10 → need 100 positions per leg but only 10 → infeasible.
+        rm = _make_risk_model(10)
+        alpha = _make_alpha(10)
+        result = optimize(alpha, rm, config=PortfolioConfig(max_weight=0.01))
+        assert result.status == "infeasible"
+
+    def test_infeasible_fallback_is_dollar_neutral(self):
+        rm = _make_risk_model(10)
+        alpha = _make_alpha(10)
+        result = optimize(alpha, rm, config=PortfolioConfig(max_weight=0.01))
+        assert result.status == "infeasible"
+        assert abs(result.weights.sum()) < 1e-12, \
+            f"Fallback portfolio not dollar-neutral: sum={result.weights.sum():.2e}"
+
+    def test_infeasible_fallback_gross_balanced(self):
+        rm = _make_risk_model(10)
+        alpha = _make_alpha(10)
+        result = optimize(alpha, rm, config=PortfolioConfig(max_weight=0.01))
+        assert result.status == "infeasible"
+        gross_long = result.weights[result.weights > 0].sum()
+        gross_short = result.weights[result.weights < 0].sum()
+        assert abs(gross_long - 1.0) < 1e-12, f"Fallback gross long = {gross_long:.4f}"
+        assert abs(gross_short + 1.0) < 1e-12, f"Fallback gross short = {gross_short:.4f}"
+
+    def test_infeasible_fallback_respects_position_cap_not_guaranteed(self):
+        # The fallback equal-weight quintile may exceed max_weight — that is expected
+        # because the original cap was the source of infeasibility.  What must hold is
+        # that the fallback doesn't crash and returns finite weights.
+        rm = _make_risk_model(10)
+        alpha = _make_alpha(10)
+        result = optimize(alpha, rm, config=PortfolioConfig(max_weight=0.01))
+        assert np.all(np.isfinite(result.weights))
+
+    # ── 2. Dollar neutrality across all objectives ───────────────────────────
+
+    def test_min_variance_dollar_neutral(self):
+        rm = _make_risk_model(50)
+        alpha = _make_alpha(50)
+        result = optimize(alpha, rm, config=PortfolioConfig(objective="min_variance"))
+        assert abs(result.weights.sum()) < 1e-5, \
+            f"min_variance portfolio not dollar-neutral: sum={result.weights.sum():.2e}"
+
+    def test_min_variance_weights_finite_and_bounded(self):
+        # min_variance may produce matched long/short pairs in the same asset (net ≈ 0),
+        # which is variance-optimal.  We verify feasibility: finite weights, gross ≤ 2.
+        rm = _make_risk_model(50)
+        alpha = _make_alpha(50)
+        result = optimize(alpha, rm, config=PortfolioConfig(objective="min_variance"))
+        assert np.all(np.isfinite(result.weights))
+        assert np.abs(result.weights).sum() <= 2.0 + 1e-5  # gross ≤ 2x (sum_long=1, sum_short=1)
+
+    def test_dollar_neutral_all_objectives(self):
+        for obj in ("max_sharpe", "min_variance", "hrp"):
+            n = 20 if obj == "hrp" else 50
+            rm = _make_risk_model(n)
+            alpha = _make_alpha(n)
+            result = optimize(alpha, rm, config=PortfolioConfig(objective=obj))
+            assert abs(result.weights.sum()) < 1e-5, \
+                f"objective={obj}: sum(w)={result.weights.sum():.2e}"
+
+    # ── 3. Non-positive-definite covariance ──────────────────────────────────
+
+    def test_near_indefinite_cov_does_not_crash(self):
+        # Inject a tiny negative eigenvalue to simulate floating-point non-PD.
+        # cp.psd_wrap should prevent the ARPACK certification failure.
+        rm = _make_risk_model(20)
+        eigenvalues, eigenvectors = np.linalg.eigh(rm.cov)
+        eigenvalues[0] = -1e-8
+        cov_bad = eigenvectors @ np.diag(eigenvalues) @ eigenvectors.T
+        rm_bad = RiskModel(
+            tickers=rm.tickers, cov=cov_bad, shrinkage=rm.shrinkage,
+            factor_loadings=rm.factor_loadings,
+            factor_variances=rm.factor_variances,
+            idio_variances=rm.idio_variances,
+        )
+        alpha = _make_alpha(20)
+        result = optimize(alpha, rm_bad)
+        assert result.weights is not None
+        assert np.all(np.isfinite(result.weights)), "NaN/Inf in weights for near-indefinite cov"
+
+    def test_near_indefinite_cov_dollar_neutral(self):
+        rm = _make_risk_model(20)
+        eigenvalues, eigenvectors = np.linalg.eigh(rm.cov)
+        eigenvalues[0] = -1e-8
+        cov_bad = eigenvectors @ np.diag(eigenvalues) @ eigenvectors.T
+        rm_bad = RiskModel(
+            tickers=rm.tickers, cov=cov_bad, shrinkage=rm.shrinkage,
+            factor_loadings=rm.factor_loadings,
+            factor_variances=rm.factor_variances,
+            idio_variances=rm.idio_variances,
+        )
+        alpha = _make_alpha(20)
+        result = optimize(alpha, rm_bad)
+        assert abs(result.weights.sum()) < 1e-5, \
+            f"dollar-neutral violated with near-indefinite cov: sum={result.weights.sum():.2e}"
+
+    def test_rank_deficient_cov_does_not_crash(self):
+        # T=15 < N=30 → sample covariance is rank-deficient; LedoitWolf regularizes
+        # but near-zero eigenvalues survive.  psd_wrap must handle the certification.
+        returns = _make_returns(n_tickers=30, n_days=15)
+        tickers = [f"T{i:02d}" for i in range(30)]
+        try:
+            rm = estimate_covariance(returns, tickers, n_factors=5, min_periods=5)
+        except ValueError:
+            pytest.skip("fewer than 2 tickers survived min_periods filter")
+        alpha = _make_alpha(len(rm.tickers))
+        result = optimize(alpha, rm)
+        assert result.weights is not None
+        assert np.all(np.isfinite(result.weights)), "NaN/Inf in weights for rank-deficient cov"
+
+    # ── 4. Turnover constraint correctness ───────────────────────────────────
+
+    def test_turnover_limit_ignored_without_prev_weights(self):
+        # A limit with no prev_weights cannot be enforced — constraint must be dropped,
+        # giving the same result as unconstrained.
+        rm = _make_risk_model(50)
+        alpha = _make_alpha(50)
+        result_free = optimize(alpha, rm)
+        result_limited = optimize(alpha, rm, config=PortfolioConfig(turnover_limit=0.01))
+        np.testing.assert_allclose(
+            result_free.weights, result_limited.weights, atol=1e-5,
+            err_msg="turnover_limit with no prev_weights changed the result unexpectedly",
+        )
+
+    def test_prev_weights_ignored_without_turnover_limit(self):
+        # prev_weights with no turnover_limit must not constrain the optimizer.
+        rm = _make_risk_model(50)
+        alpha = _make_alpha(50)
+        n = len(rm.tickers)
+        prev = np.zeros(n)
+        prev[:20] = 0.05
+        prev[20:40] = -0.05
+        result_with_prev = optimize(alpha, rm, prev_weights=prev)
+        result_free = optimize(alpha, rm)
+        np.testing.assert_allclose(
+            result_with_prev.weights, result_free.weights, atol=1e-5,
+            err_msg="prev_weights without turnover_limit changed the result unexpectedly",
+        )
+
+    def test_tight_turnover_limit_binds(self):
+        # A very tight limit from a feasible starting point forces nearly zero trading.
+        rm = _make_risk_model(50)
+        alpha = _make_alpha(50)
+        n = len(rm.tickers)
+        prev = np.zeros(n)
+        prev[:20] = 0.05
+        prev[20:40] = -0.05
+        limit = 0.02
+        result = optimize(
+            alpha, rm,
+            config=PortfolioConfig(turnover_limit=limit),
+            prev_weights=prev,
+        )
+        actual = float(np.abs(result.weights - prev).sum())
+        assert actual <= limit + 1e-4, \
+            f"Tight turnover violated: actual={actual:.4f} > limit={limit}"
+
+    def test_turnover_honored_across_limits(self):
+        rm = _make_risk_model(50)
+        alpha = _make_alpha(50)
+        n = len(rm.tickers)
+        prev = np.zeros(n)
+        prev[:20] = 0.05
+        prev[20:40] = -0.05
+        for limit in (0.1, 0.5, 1.0, 2.0):
+            result = optimize(
+                alpha, rm,
+                config=PortfolioConfig(turnover_limit=limit),
+                prev_weights=prev,
+            )
+            actual = float(np.abs(result.weights - prev).sum())
+            assert actual <= limit + 1e-4, \
+                f"limit={limit}: actual turnover {actual:.4f} exceeded"
