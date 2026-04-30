@@ -19,8 +19,12 @@ import polars as pl
 ALLOWED_MODULES: frozenset[str] = frozenset({"polars", "numpy", "math"})
 
 
+_LOOKAHEAD_COLUMNS: frozenset[str] = frozenset({"forward_return_21d"})
+
+
 def _check_imports(code: str) -> str | None:
-    """Return an error string if the code imports anything outside ALLOWED_MODULES."""
+    """Return an error string if the code imports anything outside ALLOWED_MODULES
+    or references any look-ahead columns (prediction targets)."""
     try:
         tree = ast.parse(code)
     except SyntaxError as exc:
@@ -35,6 +39,11 @@ def _check_imports(code: str) -> str | None:
             root = (node.module or "").split(".")[0]
             if root and root not in ALLOWED_MODULES:
                 return f"disallowed import from: '{node.module}'"
+        elif isinstance(node, ast.Constant) and node.value in _LOOKAHEAD_COLUMNS:
+            return (
+                f"look-ahead bias: code accesses '{node.value}' "
+                "(prediction target — not available at signal time)"
+            )
     return None
 
 
@@ -118,6 +127,32 @@ def execute_signal_code(
         return (
             False,
             f"output length {len(result)} != input length {len(mock_df)}",
+            None,
+        )
+
+    null_count = result.null_count()
+    if null_count > 0.8 * len(result):
+        return (
+            False,
+            (
+                f"compute_signal returned {null_count}/{len(result)} null values — "
+                "likely used .shift() or .over() on a cross-section. "
+                "The DataFrame has exactly 1 row per ticker; use pre-computed lag columns "
+                "(close_252d, close_21d, vol_21d, etc.) instead."
+            ),
+            None,
+        )
+
+    non_null = result.drop_nulls().to_numpy()
+    if non_null.size > 0 and not np.all(np.isfinite(non_null)):
+        n_bad = int(np.sum(~np.isfinite(non_null)))
+        return (
+            False,
+            (
+                f"compute_signal returned {n_bad} inf/nan values — "
+                "guard against zero denominators (use pl.when(col != 0).then(...).otherwise(None)) "
+                "and avoid operations that produce inf"
+            ),
             None,
         )
 

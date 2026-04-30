@@ -102,6 +102,59 @@ def compute_signal(df: pl.DataFrame) -> pl.Series:
     return (1.0 / df["pe_ratio"]).alias("sig")
 """
 
+# --- failure-mode fixtures ---
+
+LOOK_AHEAD_CODE = """
+import polars as pl
+
+def compute_signal(df: pl.DataFrame) -> pl.Series:
+    return df["forward_return_21d"].alias("sig")
+"""
+
+ALL_NULL_CODE = """
+import polars as pl
+
+def compute_signal(df: pl.DataFrame) -> pl.Series:
+    return pl.Series("sig", [None] * len(df), dtype=pl.Float64)
+"""
+
+SHIFT_OVER_TICKER_CODE = """
+import polars as pl
+
+def compute_signal(df: pl.DataFrame) -> pl.Series:
+    # Wrong: each ticker has 1 row, so .shift(1).over("ticker") returns all null.
+    return df.with_columns(
+        pl.col("close").shift(1).over("ticker").alias("sig")
+    )["sig"]
+"""
+
+INF_OUTPUT_CODE = """
+import polars as pl
+import numpy as np
+
+def compute_signal(df: pl.DataFrame) -> pl.Series:
+    arr = np.full(len(df), np.inf)
+    return pl.Series("sig", arr)
+"""
+
+CONSTANT_SIGNAL_CODE = """
+import polars as pl
+
+def compute_signal(df: pl.DataFrame) -> pl.Series:
+    return pl.Series("sig", [1.0] * len(df))
+"""
+
+FEW_NULL_CODE = """
+import polars as pl
+
+def compute_signal(df: pl.DataFrame) -> pl.Series:
+    scores = (df["close"] / df["close_252d"] - 1.0).to_list()
+    scores[0] = None
+    scores[1] = None
+    scores[2] = None
+    return pl.Series("sig", scores)
+"""
+
 
 def _make_state(**overrides) -> AgentState:
     base: AgentState = {
@@ -203,6 +256,51 @@ class TestSandbox:
         assert needs_fundamentals(FUNDAMENTAL_CODE)
         assert not needs_fundamentals(VALID_CODE)
 
+    # --- future-data / look-ahead ---
+
+    def test_look_ahead_forward_return_rejected(self):
+        ok, err, fn = execute_signal_code(LOOK_AHEAD_CODE)
+        assert not ok
+        assert "look-ahead" in err
+        assert "forward_return_21d" in err
+        assert fn is None
+
+    # --- all-null output ---
+
+    def test_all_null_output_rejected(self):
+        ok, err, fn = execute_signal_code(ALL_NULL_CODE)
+        assert not ok
+        assert "null" in err
+        assert fn is None
+
+    def test_shift_over_ticker_all_null_rejected(self):
+        # Each ticker group has exactly 1 row; shift(1) within it gives null for every ticker.
+        ok, err, fn = execute_signal_code(SHIFT_OVER_TICKER_CODE)
+        assert not ok
+        assert "null" in err
+        assert fn is None
+
+    # --- inf/nan output ---
+
+    def test_inf_output_rejected(self):
+        ok, err, fn = execute_signal_code(INF_OUTPUT_CODE)
+        assert not ok
+        assert "inf" in err.lower()
+        assert fn is None
+
+    # --- valid edge cases that sandbox should accept ---
+
+    def test_constant_signal_passes_sandbox(self):
+        # A constant score is semantically useless (IC ≈ 0) but not a sandbox violation.
+        # The critic gates on IC threshold — that's its job.
+        ok, err, fn = execute_signal_code(CONSTANT_SIGNAL_CODE)
+        assert ok, f"constant signal should pass sandbox: {err}"
+
+    def test_few_nulls_below_threshold_passes(self):
+        # 3/20 = 15% null — well under the 80% rejection threshold.
+        ok, err, fn = execute_signal_code(FEW_NULL_CODE)
+        assert ok, f"15% null should pass sandbox: {err}"
+
 
 # ---------------------------------------------------------------------------
 # Coder node: retry logic (LLM mocked)
@@ -302,6 +400,33 @@ class TestCoderNode:
             result = coder_node(_make_state())
 
         assert len(result["errors"]) == 3
+
+    def test_rate_limit_error_recorded_in_errors(self):
+        # A 429 exception must be labelled "rate limited (429)" so the user can distinguish
+        # transient quota exhaustion from real code failures.
+        mock_llm = MagicMock()
+        mock_llm.invoke.side_effect = RuntimeError("HTTP 429: rate limit exceeded")
+
+        with patch("pelican.agents.coder._get_llm", return_value=mock_llm):
+            result = coder_node(_make_state())
+
+        assert result["generated_code"] is None
+        assert any("rate limited (429)" in e for e in result["errors"])
+
+    def test_null_heavy_output_triggers_coder_retry(self):
+        # Code that produces >80% null (e.g. .shift().over()) must be rejected by sandbox
+        # and cause the coder to retry with that error in context.
+        null_response = self._mock_llm_response(SHIFT_OVER_TICKER_CODE)
+        good_response = self._mock_llm_response(VALID_CODE)
+        mock_llm = MagicMock()
+        mock_llm.invoke.side_effect = [null_response, good_response]
+
+        with patch("pelican.agents.coder._get_llm", return_value=mock_llm):
+            result = coder_node(_make_state())
+
+        assert result["generated_code"] is not None
+        assert mock_llm.invoke.call_count == 2
+        assert any("null" in e.lower() for e in result["errors"])
 
 
 # ---------------------------------------------------------------------------
@@ -473,3 +598,54 @@ class TestCriticNode:
         assert result["sharpe_net"] is not None
         assert not math.isnan(result["ic_tstat"])
         assert not math.isnan(result["sharpe_net"])
+
+    def test_rejects_trivially_zero_ic_tstat(self):
+        # A constant or random-noise signal produces IC ≈ 0, which must be rejected.
+        store, config = self._make_store_config()
+        critic = _make_critic_node(store, config)
+        zero_ic = _make_backtest_result(ic_tstat=0.0, sharpe_net=0.0)
+
+        with patch("pelican.agents.critic.run_backtest_with_fn", return_value=zero_ic):
+            result = critic(_make_state(generated_code=VALID_CODE))
+
+        assert result["decision"] == "reject"
+        assert "IC t-stat" in result["feedback"]
+        assert result["ic_tstat"] == pytest.approx(0.0)
+
+    def test_rejects_nan_sharpe(self):
+        # NaN sharpe (e.g. zero-variance L/S spread) must be rejected even if IC is fine.
+        store, config = self._make_store_config()
+        critic = _make_critic_node(store, config)
+        nan_sharpe = _make_backtest_result(ic_tstat=2.5, sharpe_net=float("nan"))
+
+        with patch("pelican.agents.critic.run_backtest_with_fn", return_value=nan_sharpe):
+            result = critic(_make_state(generated_code=VALID_CODE))
+
+        assert result["decision"] == "reject"
+        assert "Sharpe" in result["feedback"]
+
+    def test_low_period_hint_in_feedback(self):
+        # When n_periods < 6 and IC is below threshold the feedback should explain why.
+        store, config = self._make_store_config()
+        critic = _make_critic_node(store, config)
+        short_window = _make_backtest_result(ic_tstat=0.5, sharpe_net=0.5, n_periods=4)
+
+        with patch("pelican.agents.critic.run_backtest_with_fn", return_value=short_window):
+            result = critic(_make_state(generated_code=VALID_CODE))
+
+        assert result["decision"] == "reject"
+        assert "fewer than 6 periods" in result["feedback"]
+
+    def test_ic_tstat_present_in_state_when_sharpe_fails(self):
+        # When IC passes but Sharpe fails, ic_tstat must still be returned in the state
+        # so the caller can display it in the rejection panel.
+        store, config = self._make_store_config()
+        critic = _make_critic_node(store, config)
+        low_sharpe = _make_backtest_result(ic_tstat=2.5, sharpe_net=0.1)
+
+        with patch("pelican.agents.critic.run_backtest_with_fn", return_value=low_sharpe):
+            result = critic(_make_state(generated_code=VALID_CODE))
+
+        assert result["decision"] == "reject"
+        assert result["ic_tstat"] == pytest.approx(2.5)
+        assert result["sharpe_net"] == pytest.approx(0.1)
