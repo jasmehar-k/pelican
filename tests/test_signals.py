@@ -405,12 +405,20 @@ class TestCriticNode:
 
         assert result["decision"] == "reject"
 
+    def _make_fund_row(self, lo, hi):
+        """Return a mock store.query() result for the coverage check."""
+        row = MagicMock()
+        row.is_empty.return_value = False
+        row.__getitem__ = lambda self, key: {"lo": [lo], "hi": [hi]}[key]
+        return row
+
     def test_rejects_when_fundamentals_not_in_db(self):
         store, config = self._make_store_config()
-        # store.query returns empty frame → no fundamentals in DB.
-        store.query.return_value = MagicMock(
-            is_empty=lambda: True,
-        )
+        # Coverage query returns empty (no non-null roe rows above threshold).
+        row = MagicMock()
+        row.is_empty.return_value = False
+        row.__getitem__ = lambda self, key: {"lo": [None], "hi": [None]}[key]
+        store.query.return_value = row
         critic = _make_critic_node(store, config)
         result = critic(_make_state(generated_code=FUNDAMENTAL_CODE))
         assert result["decision"] == "reject"
@@ -421,36 +429,27 @@ class TestCriticNode:
         from pelican.backtest.engine import BacktestConfig
 
         store = MagicMock()
-        # Fundamentals only available from 2024-09 onwards.
-        fund_row = MagicMock()
-        fund_row.is_empty.return_value = False
-        fund_row.__getitem__ = lambda self, key: {
-            "lo": [date(2024, 9, 14)],
-            "hi": [date(2026, 5, 15)],
-        }[key]
-        store.query.return_value = fund_row
-
+        # First dense fundamentals date is Feb 2025.
+        store.query.return_value = self._make_fund_row(
+            date(2025, 2, 14), date(2026, 5, 15)
+        )
         # Backtest ends before fundamentals start.
         config = BacktestConfig(start=date(2023, 1, 1), end=date(2024, 1, 1))
         critic = _make_critic_node(store, config)
         result = critic(_make_state(generated_code=FUNDAMENTAL_CODE))
         assert result["decision"] == "reject"
         assert "no overlap" in result["feedback"]
-        assert "2024-09-14" in result["feedback"]
+        assert "2025-02-14" in result["feedback"]
 
     def test_trims_start_when_partially_outside_fundamentals_range(self):
         from datetime import date
         from pelican.backtest.engine import BacktestConfig
 
-        store = MagicMock()
-        fund_lo = date(2024, 9, 14)
+        fund_lo = date(2025, 2, 14)
         fund_hi = date(2026, 5, 15)
-        fund_row = MagicMock()
-        fund_row.is_empty.return_value = False
-        fund_row.__getitem__ = lambda self, key: {"lo": [fund_lo], "hi": [fund_hi]}[key]
-        store.query.return_value = fund_row
+        store = MagicMock()
+        store.query.return_value = self._make_fund_row(fund_lo, fund_hi)
 
-        # Window starts before fundamentals but ends well within them.
         config = BacktestConfig(start=date(2024, 1, 1), end=date(2025, 6, 1))
         critic = _make_critic_node(store, config)
 
@@ -458,8 +457,7 @@ class TestCriticNode:
         with patch("pelican.agents.critic.run_backtest_with_fn", return_value=good) as mock_bt:
             result = critic(_make_state(generated_code=FUNDAMENTAL_CODE))
 
-        # Backtest should have been called with start trimmed to fund_lo.
-        called_config = mock_bt.call_args[0][2]  # 3rd positional arg is config
+        called_config = mock_bt.call_args[0][2]
         assert called_config.start == fund_lo
         assert result["decision"] == "accept"
 

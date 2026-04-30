@@ -34,10 +34,30 @@ log = get_logger(__name__)
 
 
 def _fundamentals_coverage(store: Any) -> tuple[date, date] | None:
-    """Return (earliest, latest) available_date from the fundamentals table, or None."""
+    """Return (first_dense_date, latest_date) for the fundamentals table.
+
+    first_dense_date: earliest available_date where ≥100 tickers have non-null roe.
+    latest_date: the largest available_date in the table.
+
+    Using non-null roe as the coverage proxy avoids misleading rows that exist
+    with all-null values (yfinance creates empty rows for quarters it doesn't
+    populate, so MIN(available_date) would be falsely early).
+    """
     try:
         r = store.query(
-            "SELECT MIN(available_date) AS lo, MAX(available_date) AS hi FROM fundamentals"
+            """
+            SELECT
+                (SELECT MIN(available_date)
+                 FROM (
+                     SELECT available_date
+                     FROM fundamentals
+                     WHERE roe IS NOT NULL
+                     GROUP BY available_date
+                     HAVING COUNT(DISTINCT ticker) >= 100
+                 )) AS lo,
+                MAX(available_date) AS hi
+            FROM fundamentals
+            """
         )
         if r.is_empty():
             return None
@@ -142,12 +162,18 @@ def _make_critic_node(store: Any, config: BacktestConfig):
         )
 
         if math.isnan(ic_tstat) or ic_tstat < IC_TSTAT_THRESHOLD:
+            low_periods_hint = (
+                " — fewer than 6 periods had sufficient coverage; "
+                "try a longer window or verify fundamentals data"
+                if result.n_periods < 6
+                else ""
+            )
             return {
                 **state,
                 "decision": "reject",
                 "feedback": (
                     f"IC t-stat {ic_tstat:.2f} < threshold {IC_TSTAT_THRESHOLD} "
-                    f"(n_periods={result.n_periods})"
+                    f"(n_periods={result.n_periods}){low_periods_hint}"
                 ),
                 "ic_tstat": ic_tstat,
                 "sharpe_net": sharpe,
