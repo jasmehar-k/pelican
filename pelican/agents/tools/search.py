@@ -66,25 +66,36 @@ def _parse_entry(entry: ET.Element, namespace: dict[str, str]) -> SearchResult:
     }
 
 
+_RETRY_DELAYS = (5, 15, 30)   # seconds to wait before each retry attempt
+
+
 def search_arxiv(query: str, max_results: int = 10) -> list[SearchResult]:
     _rate_limit()
     search_query = f"({query}) AND ({ARXIV_CATEGORIES})"
-    response = httpx.get(
-        ARXIV_API_URL,
-        params={
-            "search_query": search_query,
-            "start": 0,
-            "max_results": max_results,
-            "sortBy": "relevance",
-            "sortOrder": "descending",
-        },
-        timeout=30,
-    )
-    response.raise_for_status()
+    params = {
+        "search_query": search_query,
+        "start": 0,
+        "max_results": max_results,
+        "sortBy": "relevance",
+        "sortOrder": "descending",
+    }
 
-    root = ET.fromstring(response.text)
-    namespace = {"atom": "http://www.w3.org/2005/Atom"}
-    entries = root.findall("atom:entry", namespace)
-    if not entries:
-        return []
-    return [_parse_entry(entry, namespace) for entry in entries]
+    last_exc: Exception | None = None
+    for attempt, backoff in enumerate((*_RETRY_DELAYS, None), start=1):
+        try:
+            response = httpx.get(ARXIV_API_URL, params=params, timeout=60)
+            response.raise_for_status()
+            root = ET.fromstring(response.text)
+            namespace = {"atom": "http://www.w3.org/2005/Atom"}
+            entries = root.findall("atom:entry", namespace)
+            return [_parse_entry(e, namespace) for e in entries] if entries else []
+        except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            last_exc = exc
+            if backoff is not None:
+                time.sleep(backoff)
+        except Exception:
+            raise
+
+    raise httpx.ReadTimeout(
+        f"arXiv search timed out after {len(_RETRY_DELAYS) + 1} attempts"
+    ) from last_exc

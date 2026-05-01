@@ -225,8 +225,12 @@ def _run_multi_signal(args, store, config) -> list[dict]:
 
     n = args.signals
     console.print()
-    with console.status("[bold magenta]Searching arXiv for relevant papers…[/]"):
-        papers, hypotheses = get_hypotheses(args.theme, n=n, model=args.model)
+    try:
+        with console.status("[bold magenta]Searching arXiv for relevant papers…[/]"):
+            papers, hypotheses = get_hypotheses(args.theme, n=n, model=args.model)
+    except Exception as exc:
+        console.print(f"[yellow]arXiv search failed ({exc.__class__.__name__}: {exc}) — continuing without papers[/]")
+        papers, hypotheses = [], []
 
     if papers:
         pt = Table(show_header=True, header_style="bold magenta", box=None, padding=(0, 2))
