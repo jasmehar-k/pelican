@@ -41,7 +41,8 @@ def parse_args(argv=None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Pelican agent demo")
     p.add_argument("--theme", required=True, help="Natural language factor description")
     p.add_argument("--start", default="2025-03-01",
-                   help="Backtest start (fundamental signals need ≥ 2025-03-01)")
+                   help="Backtest start. Price-only signals can use 2022-01-01+ (~36 periods); "
+                        "fundamental signals (pe_ratio, pb_ratio, roe, debt_to_equity) need ≥ 2025-03-01")
     p.add_argument("--end",   default="2025-11-01", help="Backtest end")
     p.add_argument("--db-path", default=str(s.duckdb_path))
     p.add_argument("--model", default=None,
