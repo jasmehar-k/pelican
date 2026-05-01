@@ -225,10 +225,16 @@ def _strip_html(html: str) -> str:
         return re.sub(r"<[^>]+>", " ", html)
 
 
-# Item 7. (with any non-alphanumeric after the digit) starts the MD&A section.
-_MDA_START = re.compile(r"item\s+7[^a-z0-9]", re.IGNORECASE)
-# Item 7A or Item 8 marks the end.
-_MDA_END = re.compile(r"item\s+7a\b|item\s+8\b", re.IGNORECASE)
+# Match "Item 7." or "Item 7 " at the start of a line (section header, not a reference).
+_MDA_START = re.compile(r"(?:^|\n)\s*item\s+7[^a-z0-9]", re.IGNORECASE)
+# Item 7A or Item 8 at the start of a line marks the end of MD&A.
+_MDA_END = re.compile(r"(?:^|\n)\s*item\s+(?:7a\b|8\b)", re.IGNORECASE)
+
+
+_IXBRL_TAG = re.compile(r"</?[a-zA-Z][a-zA-Z0-9]*:[a-zA-Z][^>]*?>", re.DOTALL)
+
+
+_MDA_MIN_SECTION = 150  # chars; shorter = likely a table-of-contents entry
 
 
 def extract_mda(html_text: str) -> str:
@@ -237,15 +243,28 @@ def extract_mda(html_text: str) -> str:
     Returns up to _MDA_MAX_CHARS of the MD&A section, or the first
     _MDA_MAX_CHARS of body text if no Item 7 marker is found.
     """
+    # Strip inline XBRL namespace tags (e.g. <ix:nonfraction>, <dei:...>)
+    # while preserving their text content so MD&A prose survives.
+    html_text = _IXBRL_TAG.sub("", html_text)
     plain = _strip_html(html_text)
-    start_m = _MDA_START.search(plain)
-    if start_m is None:
-        return plain[:_MDA_MAX_CHARS]
 
-    start_idx = start_m.start()
-    end_m = _MDA_END.search(plain, start_idx + 20)
-    end_idx = end_m.start() if end_m else start_idx + _MDA_MAX_CHARS * 2
-    return plain[start_idx:end_idx][:_MDA_MAX_CHARS]
+    # Scan all Item 7 matches; skip table-of-contents entries (< _MDA_MIN_SECTION chars).
+    best: str = ""
+    pos = 0
+    while True:
+        start_m = _MDA_START.search(plain, pos)
+        if start_m is None:
+            break
+        start_idx = start_m.start()
+        end_m = _MDA_END.search(plain, start_idx + 20)
+        end_idx = end_m.start() if end_m else start_idx + _MDA_MAX_CHARS * 2
+        section = plain[start_idx:end_idx][:_MDA_MAX_CHARS]
+        if len(section) >= _MDA_MIN_SECTION:
+            best = section
+            break  # take the first substantial hit
+        pos = start_idx + 1
+
+    return best or plain[:_MDA_MAX_CHARS]
 
 
 # ---------------------------------------------------------------------------
@@ -308,40 +327,55 @@ Scale:
 """
 
 _TONE_RE = re.compile(r'"tone_score"\s*:\s*(-?\d+(?:\.\d+)?)')
+_TONE_RETRY_DELAYS = (15, 45, 90)
 
 
 def _get_llm(model: str | None = None):
     from langchain_openai import ChatOpenAI
     s = get_settings()
+    # Use the dedicated edgar tone model when no override is given — it is less
+    # rate-limited for batch use than the general openrouter_model.
     return ChatOpenAI(
-        model=model or s.openrouter_model,
+        model=model or s.edgar_tone_model,
         base_url=s.openrouter_base_url,
         api_key=s.openrouter_api_key,
         temperature=0.0,
-        max_tokens=32,
+        max_tokens=48,
     )
 
 
 def score_tone(mda_text: str, model: str | None = None) -> float | None:
-    """Score MD&A tone with an LLM.  Returns a float in [-1, +1] or None on failure."""
+    """Score MD&A tone with an LLM.  Returns a float in [-1, +1] or None on failure.
+
+    Retries up to 3 times on 429 rate-limit responses (free-tier models are
+    frequently throttled when called in rapid succession).
+    """
     if not mda_text or not mda_text.strip():
         return None
     truncated = mda_text[:3000]
-    try:
-        llm = _get_llm(model)
-        resp = llm.invoke([
-            {"role": "system", "content": _TONE_SYSTEM},
-            {"role": "user", "content": truncated},
-        ])
-        raw = resp.content.strip()
-        m = _TONE_RE.search(raw)
-        if m:
-            return max(-1.0, min(1.0, float(m.group(1))))
-        log.warning("tone scoring: could not parse JSON", raw=raw[:120])
-        return None
-    except Exception as exc:
-        log.warning("tone scoring failed", error=str(exc))
-        return None
+    for _attempt, backoff in enumerate((*_TONE_RETRY_DELAYS, None), start=1):
+        try:
+            llm = _get_llm(model)
+            resp = llm.invoke([
+                {"role": "system", "content": _TONE_SYSTEM},
+                {"role": "user", "content": truncated},
+            ])
+            raw = resp.content.strip()
+            m = _TONE_RE.search(raw)
+            if m:
+                return max(-1.0, min(1.0, float(m.group(1))))
+            log.warning("tone scoring: could not parse JSON", raw=raw[:120])
+            return None
+        except Exception as exc:
+            err = str(exc)
+            if "429" in err and backoff is not None:
+                log.warning("tone scoring rate limited, retrying",
+                            backoff=backoff, attempt=_attempt)
+                time.sleep(backoff)
+                continue
+            log.warning("tone scoring failed", error=err[:200])
+            return None
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -417,10 +451,12 @@ def seed_edgar_sentiment(
     if after is None:
         after = before - timedelta(days=3 * 365)
 
-    # Load existing keys to skip re-scoring.
+    # Only skip filings that were already successfully scored (tone_score IS NOT NULL).
+    # Rows with null tone_score (e.g. from a prior rate-limited run) will be re-scored.
     try:
         existing_df = store.query(
-            "SELECT ticker, period_end, filing_type FROM edgar_sentiment"
+            "SELECT ticker, period_end, filing_type FROM edgar_sentiment "
+            "WHERE tone_score IS NOT NULL"
         )
         existing_keys: set[tuple] = {
             (row["ticker"], row["period_end"], row["filing_type"])
@@ -472,6 +508,8 @@ def seed_edgar_sentiment(
 
                 mda = extract_mda(html)
                 tone = score_tone(mda, model)
+                # Space out LLM calls to stay within free-tier rate limits.
+                time.sleep(get_settings().edgar_llm_rate_limit_seconds)
                 ticker_records.append({
                     "ticker": ticker,
                     "filing_date": fm["filing_date"],

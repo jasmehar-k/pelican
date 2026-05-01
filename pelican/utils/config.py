@@ -39,6 +39,15 @@ class Settings(BaseSettings):
         default="pelican-research jasmehar.kr@gmail.com",
         alias="EDGAR_USER_AGENT",
     )
+    # Dedicated model for batch EDGAR tone scoring — choose one that is not
+    # heavily rate-limited when called many times in succession.
+    # Override via EDGAR_TONE_MODEL env var if the default is throttled.
+    edgar_tone_model: str = Field(
+        default="minimax/minimax-m2.5:free",
+        alias="EDGAR_TONE_MODEL",
+    )
+    # Sleep between LLM tone-scoring calls to avoid free-tier rate limits.
+    edgar_llm_rate_limit_seconds: float = 1.0
 
 
 @lru_cache(maxsize=1)

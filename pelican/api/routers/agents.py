@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from pelican.agents.graph import build_graph, coerce_state, initial_state
-from pelican.api.models import AgentRunRequest, AgentRunSummary
+from pelican.api.models import AgentRunLineage, AgentRunRequest, AgentRunSummary, ResearchPaper
 from pelican.backtest.engine import BacktestConfig
 
 router = APIRouter(prefix="/agents", tags=["agents"])
@@ -40,6 +40,18 @@ def _safe_state(state: dict) -> dict:
         if isinstance(v, (str, int, float, bool, list, type(None))):
             out[k] = v
     return out
+
+
+def _parse_papers(value: Any) -> list[dict[str, Any]]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+        except Exception:
+            return []
+        return decoded if isinstance(decoded, list) else []
+    return list(value) if isinstance(value, list) else []
 
 
 def _run_graph_thread(
@@ -153,6 +165,12 @@ async def stream_run(run_id: str) -> StreamingResponse:
     )
 
 
+@router.get("/status/{run_id}")
+async def status_run(run_id: str) -> StreamingResponse:
+    """Compatibility alias for the SSE run stream."""
+    return await stream_run(run_id)
+
+
 @router.get("/runs")
 async def list_runs(request: Request) -> list[AgentRunSummary]:
     """List completed runs from the research log (most recent first)."""
@@ -181,6 +199,59 @@ async def list_runs(request: Request) -> list[AgentRunSummary]:
         ]
     except Exception:
         return []
+
+
+@router.get("/research-log")
+async def list_research_log(request: Request) -> list[AgentRunLineage]:
+    """List persisted research lineage rows for the dashboard."""
+    store = request.app.state.store
+    try:
+        df = store.get_recent_research_log(50)
+        rows: list[AgentRunLineage] = []
+        for row in df.to_dicts():
+            papers = [ResearchPaper.model_validate(p) for p in _parse_papers(row.get("papers")) if isinstance(p, dict)]
+            rows.append(AgentRunLineage(
+                run_id=row.get("run_id") or "",
+                ts=str(row.get("ts") or ""),
+                theme=row.get("theme") or "",
+                arxiv_ids=list(row.get("arxiv_ids") or []),
+                papers=papers,
+                signal_hypothesis=row.get("signal_hypothesis"),
+                generated_code=row.get("generated_code"),
+                decision=row.get("decision"),
+                ic_tstat=row.get("ic_tstat"),
+                sharpe_net=row.get("sharpe_net"),
+                feedback=row.get("feedback"),
+                retry_count=int(row.get("retry_count") or 0),
+            ))
+        return rows
+    except Exception:
+        return []
+
+
+@router.get("/runs/{run_id}/research")
+async def get_run_research(request: Request, run_id: str) -> AgentRunLineage:
+    """Return the persisted lineage for a single run."""
+    store = request.app.state.store
+    df = store.get_research_log_entry(run_id)
+    if df.is_empty():
+        raise HTTPException(status_code=404, detail="run not found")
+    row = df.to_dicts()[0]
+    papers = [ResearchPaper.model_validate(p) for p in _parse_papers(row.get("papers")) if isinstance(p, dict)]
+    return AgentRunLineage(
+        run_id=row.get("run_id") or run_id,
+        ts=str(row.get("ts") or ""),
+        theme=row.get("theme") or "",
+        arxiv_ids=list(row.get("arxiv_ids") or []),
+        papers=papers,
+        signal_hypothesis=row.get("signal_hypothesis"),
+        generated_code=row.get("generated_code"),
+        decision=row.get("decision"),
+        ic_tstat=row.get("ic_tstat"),
+        sharpe_net=row.get("sharpe_net"),
+        feedback=row.get("feedback"),
+        retry_count=int(row.get("retry_count") or 0),
+    )
 
 
 @router.get("/runs/{run_id}")

@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Environment
+.env
+
+# Data (large, regenerable)
+data/cache/
+data/*.duckdb
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Notebooks output
+notebooks/*.ipynb
+
+# OS
+.DS_Store
+
+# CLAUDE
+CLAUDE.md

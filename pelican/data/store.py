@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 from typing import Any
 
 import duckdb
@@ -47,6 +48,7 @@ CREATE TABLE IF NOT EXISTS research_log (
     ts                 TIMESTAMPTZ DEFAULT current_timestamp,
     theme              VARCHAR,
     arxiv_ids          VARCHAR[],
+    papers             JSON,
     signal_hypothesis  TEXT,
     generated_code     TEXT,
     decision           VARCHAR,
@@ -90,19 +92,21 @@ class DataStore:
 
     def init_schema(self) -> None:
         self._conn.execute(_SCHEMA_SQL)
+        self._conn.execute("ALTER TABLE research_log ADD COLUMN IF NOT EXISTS papers JSON")
 
     def log_run(self, state: dict[str, Any]) -> None:
         self._conn.execute(
             """
             INSERT INTO research_log (
-                run_id, theme, arxiv_ids, signal_hypothesis, generated_code,
+                run_id, theme, arxiv_ids, papers, signal_hypothesis, generated_code,
                 decision, ic_tstat, sharpe_net, feedback, retry_count
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 state.get("run_id"),
                 state.get("theme"),
                 state.get("arxiv_ids") or [],
+                json.dumps(state.get("papers") or []),
                 state.get("signal_hypothesis"),
                 state.get("generated_code"),
                 state.get("decision"),
@@ -111,6 +115,32 @@ class DataStore:
                 state.get("feedback"),
                 state.get("retry_count", 0),
             ],
+        )
+
+    def get_recent_research_log(self, limit: int = 50) -> pl.DataFrame:
+        return self.query(
+            """
+            SELECT run_id, ts, theme, arxiv_ids, signal_hypothesis,
+                   generated_code, decision, ic_tstat, sharpe_net,
+                   feedback, retry_count
+            FROM research_log
+            ORDER BY ts DESC
+            LIMIT ?
+            """,
+            [limit],
+        )
+
+    def get_research_log_entry(self, run_id: str) -> pl.DataFrame:
+        return self.query(
+            """
+            SELECT run_id, ts, theme, arxiv_ids, signal_hypothesis,
+                   generated_code, decision, ic_tstat, sharpe_net,
+                   feedback, retry_count
+            FROM research_log
+            WHERE run_id = ?
+            LIMIT 1
+            """,
+            [run_id],
         )
 
     def log_memo(self, state: dict[str, Any]) -> None:

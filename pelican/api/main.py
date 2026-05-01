@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+import pelican.factors  # noqa: F401 - register classic and EDGAR factors
 from pelican.data.store import DataStore
 from pelican.utils.config import get_settings
 from pelican.utils.logging import configure_logging
@@ -32,7 +33,14 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Pelican", version="0.1.0", lifespan=lifespan)
 
     from pelican.api.routers.agents import router as agents_router
+    from pelican.api.routers.factors import router as factors_router
+    from pelican.api.routers.portfolio import router as portfolio_router
+    from pelican.api.routers.signals import router as signals_router
+
     app.include_router(agents_router)
+    app.include_router(signals_router)
+    app.include_router(factors_router)
+    app.include_router(portfolio_router)
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
