@@ -35,6 +35,10 @@ class SignalSpec:
     requires_edgar: bool = False
     # Which edgar columns this signal reads (for documentation).
     edgar_data_deps: tuple[str, ...] = ()
+    # Per-signal minimum score coverage override.  When set, the engine uses this
+    # instead of BacktestConfig.min_score_coverage.  Useful for alternative-data
+    # signals that are only partially seeded (e.g. EDGAR_SENTIMENT).
+    min_score_coverage: float | None = None
 
 
 # A signal function receives the cross-section panel (all tickers, all history

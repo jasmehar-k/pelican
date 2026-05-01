@@ -147,6 +147,7 @@ def run_backtest(
     prev_longs: set[str] = set()
     prev_shorts: set[str] = set()
     turnovers: list[float] = []
+    _sparse_warned = False
 
     for rebal_date in rebal_dates:
         universe = get_point_in_time_universe(rebal_date, store)
@@ -196,10 +197,25 @@ def run_backtest(
         cs = cs.with_columns(scores.alias("score"))
 
         # Require minimum coverage before proceeding.
+        # Use signal-level override when set (e.g. for sparse alternative-data signals).
+        coverage_threshold = (
+            sig.spec.min_score_coverage
+            if sig.spec.min_score_coverage is not None
+            else config.min_score_coverage
+        )
         n_scored = cs["score"].drop_nulls().len()
-        if n_scored < config.min_score_coverage * len(universe):
+        if n_scored < coverage_threshold * len(universe):
             log.warning("insufficient score coverage, skipping", date=rebal_date, n_scored=n_scored)
             continue
+        if not _sparse_warned and n_scored < 0.1 * len(universe):
+            log.warning(
+                "sparse signal coverage — IC and Sharpe estimates are noisy; "
+                "seed more tickers for production use",
+                signal=signal_name,
+                n_scored=n_scored,
+                universe_size=len(universe),
+            )
+            _sparse_warned = True
 
         # Cross-sectional rank → quintile (1=bottom, 5=top).
         cs = cs.with_columns(

@@ -55,8 +55,11 @@ def print_tearsheet(result: BacktestResult) -> None:
     print(f"  {result.signal_name} — tearsheet")
     print(f"  {result.config.start}  →  {result.config.end}")
     print(f"{'='*w}")
+    avg_scored = float(result.period_returns["n_scored"].mean()) if "n_scored" in result.period_returns.columns else float("nan")
+    coverage_pct = avg_scored / result.avg_universe_size if result.avg_universe_size > 0 else float("nan")
     print(f"  Periods            : {result.n_periods}")
     print(f"  Avg universe size  : {result.avg_universe_size:.0f}")
+    print(f"  Avg scored tickers : {avg_scored:.0f} ({coverage_pct:.1%} coverage)")
     print(f"  IC mean            : {result.ic_mean:+.4f}")
     print(f"  ICIR               : {result.icir:+.3f}")
     print(f"  IC t-stat          : {result.ic_tstat:+.3f}")
@@ -106,16 +109,19 @@ def main(argv=None) -> None:
         sys.exit(1)
 
     # Summary comparison table.
-    print("\n" + "=" * 75)
-    print(f"{'Signal':<22} {'IC':>8} {'ICIR':>8} {'Sharpe(net)':>12} {'MaxDD':>10} {'Turn':>8}")
-    print("-" * 75)
+    print("\n" + "=" * 87)
+    print(f"{'Signal':<22} {'IC':>8} {'ICIR':>8} {'Sharpe(net)':>12} {'MaxDD':>10} {'Turn':>8} {'Coverage':>10}")
+    print("-" * 87)
     for name, r in results.items():
+        avg_sc = float(r.period_returns["n_scored"].mean()) if "n_scored" in r.period_returns.columns else float("nan")
+        cov = avg_sc / r.avg_universe_size if r.avg_universe_size > 0 else float("nan")
+        cov_str = f"{cov:.0%}" if not (cov != cov) else "n/a"
         print(
             f"{name:<22} {r.ic_mean:>+8.4f} {r.icir:>+8.3f} "
             f"{r.sharpe_net:>+12.3f} {r.max_drawdown_net:>+10.2%} "
-            f"{r.avg_turnover:>8.2%}"
+            f"{r.avg_turnover:>8.2%} {cov_str:>10}"
         )
-    print("=" * 75)
+    print("=" * 87)
 
     # Factor correlation matrix.
     if not args.no_corr and len(results) >= 2:

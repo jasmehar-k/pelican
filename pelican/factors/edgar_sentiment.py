@@ -27,6 +27,11 @@ from pelican.backtest.signals import SignalSpec, register
     edgar_data_deps=("tone_delta",),
     expected_ic_range=(0.01, 0.05),
     data_frequency="quarterly",
+    # Alternative-data signals are only seeded for a subset of the universe.
+    # Set coverage floor to 0.5% so the engine runs even with partial seeding
+    # (e.g. 5 tickers out of 500).  IC validity still requires >= 20 tickers
+    # for meaningful statistics — seed more tickers for production use.
+    min_score_coverage=0.005,
 ))
 def _edgar_sentiment(cs: pl.DataFrame) -> pl.Series:
     return cs["tone_delta"].alias("EDGAR_SENTIMENT")
