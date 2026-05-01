@@ -144,10 +144,14 @@ def _run_one_signal_streaming(
 
         def _invoke():
             nonlocal result
-            r = graph.invoke(state)
-            result.update(r)
-            with _lock:
-                _phase[0] = "done"
+            try:
+                r = graph.invoke(state)
+                result.update(r)
+            except Exception as exc:
+                result.update({"decision": None, "feedback": f"graph error: {exc}"})
+            finally:
+                with _lock:
+                    _phase[0] = "done"
 
         import pelican.agents.critic as _critic_mod
         _orig_run_bt = _critic_mod.run_backtest_with_fn
@@ -394,10 +398,14 @@ def _run_streaming(args, store, config, with_researcher: bool = True) -> dict:
 
         def _invoke():
             nonlocal result
-            r = graph.invoke(state)
-            result.update(r)
-            with _lock:
-                _phase[0] = "done"
+            try:
+                r = graph.invoke(state)
+                result.update(r)
+            except Exception as exc:
+                result.update({"decision": None, "feedback": f"graph error: {exc}"})
+            finally:
+                with _lock:
+                    _phase[0] = "done"
 
         import pelican.agents.critic as _critic_mod
         _orig_run_bt = _critic_mod.run_backtest_with_fn
@@ -482,7 +490,12 @@ def _run_plain(args, store, config, with_researcher: bool = True) -> dict:
     print(f"\nTheme: {args.theme}")
     print(f"Backtest: {args.start} → {args.end}\n")
 
-    result = graph.invoke(state)
+    try:
+        result = graph.invoke(state)
+    except Exception as exc:
+        result = dict(state)
+        result["decision"] = None
+        result["feedback"] = f"graph error: {exc}"
 
     print(f"\nDecision  : {result['decision']}")
     print(f"Feedback  : {result['feedback']}")

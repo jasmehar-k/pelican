@@ -32,10 +32,14 @@ from pelican.backtest.engine import BacktestConfig
 MAX_GRAPH_RETRIES = 2  # graph-level coder→critic cycles before giving up
 
 
+_HARD_RETRY_CAP = MAX_GRAPH_RETRIES * 4  # absolute ceiling regardless of any bug
+
+
 def _route_after_critic(state: AgentState) -> str:
     if state.get("decision") == "accept":
         return "reporter"
-    if state.get("retry_count", 0) < MAX_GRAPH_RETRIES:
+    retry_count = state.get("retry_count", 0)
+    if retry_count < MAX_GRAPH_RETRIES and retry_count < _HARD_RETRY_CAP:
         return "coder"
     return "reporter"
 
@@ -111,3 +115,34 @@ def initial_state(theme: str) -> AgentState:
         retry_count=0,
         memo=None,
     )
+
+
+_STATE_DEFAULTS: dict = {
+    "generated_code": None,
+    "errors": [],
+    "decision": None,
+    "feedback": None,
+    "ic_tstat": None,
+    "sharpe_net": None,
+    "papers": [],
+    "signal_hypothesis": None,
+    "arxiv_ids": [],
+    "run_id": "",
+    "retry_count": 0,
+    "memo": None,
+}
+
+
+def coerce_state(state: dict) -> AgentState:
+    """Fill any missing AgentState fields with safe defaults.
+
+    Allows callers that build state by hand (e.g. the API, direct test
+    invocations) to omit fields that were added in later stages without
+    causing KeyError inside nodes.
+    """
+    merged = {**_STATE_DEFAULTS, **state}
+    if not merged["run_id"]:
+        merged["run_id"] = str(uuid.uuid4())
+    if not isinstance(merged["errors"], list):
+        merged["errors"] = []
+    return AgentState(**merged)

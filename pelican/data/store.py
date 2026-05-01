@@ -52,7 +52,8 @@ CREATE TABLE IF NOT EXISTS research_log (
     decision           VARCHAR,
     ic_tstat           DOUBLE,
     sharpe_net         DOUBLE,
-    feedback           TEXT
+    feedback           TEXT,
+    retry_count        INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS signal_memos (
@@ -84,8 +85,8 @@ class DataStore:
             """
             INSERT INTO research_log (
                 run_id, theme, arxiv_ids, signal_hypothesis, generated_code,
-                decision, ic_tstat, sharpe_net, feedback
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                decision, ic_tstat, sharpe_net, feedback, retry_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 state.get("run_id"),
@@ -97,6 +98,7 @@ class DataStore:
                 state.get("ic_tstat"),
                 state.get("sharpe_net"),
                 state.get("feedback"),
+                state.get("retry_count", 0),
             ],
         )
 
