@@ -57,7 +57,8 @@ class TestArxivSearch:
         with patch("pelican.agents.tools.search.httpx.get", return_value=response) as mock_get:
             result = search_arxiv("momentum", max_results=2)
 
-        assert len(result) == 2
+        # "Quality and Leverage" has no "momentum" keyword — filtered out
+        assert len(result) == 1
         assert result[0]["title"] == "Momentum and Drift"
         assert result[0]["authors"] == ["Alice Smith", "Bob Jones"]
         assert result[0]["arxiv_id"] == "2401.00001"
@@ -502,6 +503,17 @@ class TestRelevanceSort:
 
     def test_empty_list_returns_empty(self):
         assert _relevance_sort([], ["momentum"]) == []
+
+    def test_zero_match_papers_filtered_from_search(self):
+        # Papers where no query keyword appears anywhere should be dropped.
+        response = MagicMock()
+        response.text = ATOM_FEED   # "Quality and Leverage" has no "momentum" keyword
+        response.raise_for_status.return_value = None
+        with patch("pelican.agents.tools.search.httpx.get", return_value=response):
+            result = search_arxiv("momentum")
+        titles = [p["title"] for p in result]
+        assert "Momentum and Drift" in titles
+        assert "Quality and Leverage" not in titles
 
 
 class TestPdfCleaning:

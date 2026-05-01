@@ -118,7 +118,14 @@ def search_arxiv(query: str, max_results: int = 10) -> list[SearchResult]:
             namespace = {"atom": "http://www.w3.org/2005/Atom"}
             entries = root.findall("atom:entry", namespace)
             papers = [_parse_entry(e, namespace) for e in entries] if entries else []
-            return _relevance_sort(papers, words)
+            ranked = _relevance_sort(papers, words)
+            # Drop papers where not a single query keyword appears anywhere
+            filtered = [
+                p for p in ranked
+                if any(w.lower() in p["title"].lower() or w.lower() in p["abstract"].lower()
+                       for w in words)
+            ]
+            return filtered or ranked  # fallback to unfiltered if everything gets dropped
         except (httpx.TimeoutException, httpx.NetworkError) as exc:
             last_exc = exc
             if backoff is not None:

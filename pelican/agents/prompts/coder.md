@@ -82,9 +82,13 @@ def compute_signal(df: pl.DataFrame) -> pl.Series:
 
 ## When to use fundamental columns
 
-Only use `pe_ratio`, `pb_ratio`, `roe`, `debt_to_equity`, or `market_cap` if the factor
-description explicitly references fundamental data (earnings, book value, equity, debt, size).
-For momentum, volatility, and price-based signals, use only price columns.
+Only use `pe_ratio`, `pb_ratio`, `roe`, `debt_to_equity`, or `market_cap` when the factor
+description uses one of these exact terms: P/E ratio, price-to-earnings, price-to-book,
+return on equity, debt-to-equity, or market capitalisation/size.
+
+Do NOT use fundamental columns for vague terms like "quality", "profitability", "cash flows",
+"dividend", or "financial health" — these are not available in the dataset. Stick to price
+and volatility columns unless a specific fundamental column is named.
 
 ## DO NOT use these patterns
 
