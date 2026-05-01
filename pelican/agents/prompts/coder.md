@@ -47,7 +47,9 @@ Fundamental columns (present when the signal requires them):
 ## Signal contract
 
 - Return a `pl.Series` of `float64`, **same length as df**, named with `.alias("signal_name")`
-- Higher score = more bullish (long-biased); lower score = more bearish (short-biased)
+- **Higher score = more bullish (long-biased); lower score = more bearish (short-biased)**
+- If the factor predicts that **lower raw values → higher returns** (e.g. volatility, debt, PE ratio),
+  you MUST negate the raw value: return `-df["vol_21d"]`, not `df["vol_21d"]`
 - Use `None` (not `float("nan")`) for missing values — the engine calls `drop_nulls()` before ranking
 - Allowed imports: `polars as pl`, `numpy as np`, `math` only
 

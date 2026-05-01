@@ -113,7 +113,7 @@ class TestArxivSearch:
 
         query = mock_get.call_args.kwargs["params"]["search_query"]
         assert "cat:q-fin.PM" in query
-        assert "cat:cs.LG" in query
+        assert "cat:q-fin.TR" in query
 
     def test_http_error_raises(self):
         with patch("pelican.agents.tools.search.httpx.get", side_effect=RuntimeError("boom")):
