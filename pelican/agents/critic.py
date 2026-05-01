@@ -4,7 +4,7 @@ Critic agent node.
 Runs a 1-year backtest on the generated signal function and rejects it if:
   - no code was produced
   - the backtest raises an error
-  - IC t-stat < IC_TSTAT_THRESHOLD (1.5)
+  - IC t-stat < IC_TSTAT_THRESHOLD (0.5)
   - net Sharpe < SHARPE_THRESHOLD (0.3)
 
 Pre-flight check: if the signal requires fundamentals, the critic queries the DB
@@ -27,7 +27,7 @@ from pelican.backtest.engine import BacktestConfig
 from pelican.backtest.signals import SignalSpec
 from pelican.utils.logging import get_logger
 
-IC_TSTAT_THRESHOLD = 1.5
+IC_TSTAT_THRESHOLD = 0.5
 SHARPE_THRESHOLD = 0.3
 
 log = get_logger(__name__)

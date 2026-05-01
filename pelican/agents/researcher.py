@@ -124,6 +124,12 @@ def get_hypotheses(
         {"role": "user", "content": _build_multi_user_message(theme, context, n)},
     ])
     hypotheses = _parse_multi_response(response.content, n)
+    if not hypotheses:
+        log.warning(
+            "researcher: no hypotheses parsed — raw LLM response below",
+            theme=theme,
+            response=response.content[:800],
+        )
 
     for paper in context:
         if not has_paper(paper["arxiv_id"]):

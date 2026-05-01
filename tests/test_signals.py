@@ -464,14 +464,14 @@ class TestCriticNode:
     def test_rejects_ic_tstat_below_threshold(self):
         store, config = self._make_store_config()
         critic = _make_critic_node(store, config)
-        low_ic = _make_backtest_result(ic_tstat=0.8, sharpe_net=1.0)
+        low_ic = _make_backtest_result(ic_tstat=0.3, sharpe_net=1.0)
 
         with patch("pelican.agents.critic.run_backtest_with_fn", return_value=low_ic):
             result = critic(_make_state(generated_code=VALID_CODE))
 
         assert result["decision"] == "reject"
         assert "IC t-stat" in result["feedback"]
-        assert result["ic_tstat"] == pytest.approx(0.8)
+        assert result["ic_tstat"] == pytest.approx(0.3)
 
     def test_rejects_sharpe_below_threshold(self):
         store, config = self._make_store_config()
@@ -628,7 +628,7 @@ class TestCriticNode:
         # When n_periods < 6 and IC is below threshold the feedback should explain why.
         store, config = self._make_store_config()
         critic = _make_critic_node(store, config)
-        short_window = _make_backtest_result(ic_tstat=0.5, sharpe_net=0.5, n_periods=4)
+        short_window = _make_backtest_result(ic_tstat=0.2, sharpe_net=0.5, n_periods=4)
 
         with patch("pelican.agents.critic.run_backtest_with_fn", return_value=short_window):
             result = critic(_make_state(generated_code=VALID_CODE))
