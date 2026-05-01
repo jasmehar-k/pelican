@@ -85,12 +85,14 @@ def _parse_multi_response(text: str, n: int) -> list[dict]:
         h = _parse_flag(text, f"HYPOTHESIS_{i}")
         df = _parse_flag(text, f"DATA_FIELDS_{i}") or ""
         sn = _parse_flag(text, f"SIGNAL_NAME_{i}")
-        # Reject placeholder fragments (model wrote "referencing paper N." etc.)
-        if h and len(h) >= 30 and not h.startswith("..."):
+        # Reject placeholder fragments and unfilled template markers
+        is_template = h and ("<" in h or h.startswith("..."))
+        is_stub_name = sn in (None, "short_snake_case", f"signal_{i}_name")
+        if h and len(h) >= 30 and not is_template:
             results.append({
                 "hypothesis": h,
                 "data_fields": [f.strip() for f in df.split(",") if f.strip()],
-                "signal_name": sn or f"signal_{i}",
+                "signal_name": (f"signal_{i}" if is_stub_name else sn),
             })
     return results
 
