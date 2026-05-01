@@ -273,14 +273,15 @@ def _run_multi_signal(args, store, config) -> list[dict]:
     summary.add_column("Decision", justify="center")
     summary.add_column("IC t-stat", justify="right")
     summary.add_column("Net Sharpe", justify="right")
-    summary.add_column("Hypothesis", max_width=55)
+    summary.add_column("Hypothesis")
 
     for r in results:
         accepted = r.get("decision") == "accept"
         dec = "[bold green]ACCEPT ✓[/]" if accepted else "[bold red]REJECT ✗[/]"
         ic = f"{r['ic_tstat']:.3f}" if r.get("ic_tstat") is not None else "—"
         sh = f"{r['sharpe_net']:.3f}" if r.get("sharpe_net") is not None else "—"
-        hyp = (r.get("_hypothesis") or "—")[:80]
+        raw_hyp = r.get("_hypothesis") or "—"
+        hyp = (raw_hyp[:77] + "…") if len(raw_hyp) > 80 else raw_hyp
         summary.add_row(r.get("_signal_name", "?"), dec, ic, sh, hyp)
 
     console.print(Panel(summary, title="[bold]Research run summary[/]", border_style="dim"))

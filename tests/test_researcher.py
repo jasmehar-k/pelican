@@ -62,7 +62,7 @@ class TestArxivSearch:
         assert result[0]["authors"] == ["Alice Smith", "Bob Jones"]
         assert result[0]["arxiv_id"] == "2401.00001"
         assert result[0]["url"].endswith("2401.00001")
-        assert mock_get.call_args.kwargs["params"]["search_query"].startswith("(momentum)")
+        assert "abs:momentum" in mock_get.call_args.kwargs["params"]["search_query"]
 
     def test_abstract_truncated_to_800_chars(self):
         feed = ATOM_FEED.replace(
@@ -384,7 +384,7 @@ class TestGetHypotheses:
     def test_each_hypothesis_has_required_keys(self, tmp_path, monkeypatch):
         _configure_env(monkeypatch, tmp_path)
         response = (
-            "HYPOTHESIS_1: Some rationale.\n"
+            "HYPOTHESIS_1: Stocks with strong recent returns tend to continue outperforming due to momentum.\n"
             "DATA_FIELDS_1: close_252d, close_21d\n"
             "SIGNAL_NAME_1: momentum\n"
         )

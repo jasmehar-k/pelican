@@ -69,9 +69,23 @@ def _parse_entry(entry: ET.Element, namespace: dict[str, str]) -> SearchResult:
 _RETRY_DELAYS = (5, 15, 30)   # seconds to wait before each retry attempt
 
 
+def _build_query(query: str) -> str:
+    """Scope each word of the user query to abstract/title fields.
+
+    Plain keyword search matches anywhere in arXiv metadata, which pulls in
+    papers where e.g. "quality" appears in a CS engineering context.  Using
+    abs:/ti: field selectors keeps results anchored to the paper's content.
+    """
+    words = [w for w in re.split(r"\s+", query.strip()) if len(w) > 2]
+    if not words:
+        words = [query]
+    field_clauses = " AND ".join(f"(abs:{w} OR ti:{w})" for w in words)
+    return f"({field_clauses}) AND ({ARXIV_CATEGORIES})"
+
+
 def search_arxiv(query: str, max_results: int = 10) -> list[SearchResult]:
     _rate_limit()
-    search_query = f"({query}) AND ({ARXIV_CATEGORIES})"
+    search_query = _build_query(query)
     params = {
         "search_query": search_query,
         "start": 0,
