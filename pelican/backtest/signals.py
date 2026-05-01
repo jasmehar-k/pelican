@@ -31,6 +31,10 @@ class SignalSpec:
     expected_ic_range: tuple[float, float] = (-0.10, 0.10)
     # Rebalance frequency of the underlying data.
     data_frequency: str = "monthly"
+    # Whether the engine should join the edgar_sentiment panel into the cross-section.
+    requires_edgar: bool = False
+    # Which edgar columns this signal reads (for documentation).
+    edgar_data_deps: tuple[str, ...] = ()
 
 
 # A signal function receives the cross-section panel (all tickers, all history

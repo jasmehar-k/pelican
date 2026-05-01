@@ -67,6 +67,17 @@ CREATE TABLE IF NOT EXISTS signal_memos (
     arxiv_ids   VARCHAR[],
     memo        TEXT
 );
+
+CREATE TABLE IF NOT EXISTS edgar_sentiment (
+    ticker       VARCHAR NOT NULL,
+    filing_date  DATE    NOT NULL,
+    period_end   DATE    NOT NULL,
+    filing_type  VARCHAR NOT NULL,
+    tone_score   DOUBLE,
+    tone_delta   DOUBLE,
+    model        VARCHAR,
+    PRIMARY KEY (ticker, period_end, filing_type)
+);
 """
 
 
@@ -119,6 +130,24 @@ class DataStore:
                 state.get("arxiv_ids") or [],
                 state.get("memo"),
             ],
+        )
+
+    def store_edgar_scores(self, df: pl.DataFrame) -> int:
+        """Upsert rows into edgar_sentiment.  Returns number of rows written."""
+        return self.write(df, "edgar_sentiment")
+
+    def get_edgar_coverage(self) -> pl.DataFrame:
+        """Return per-ticker filing counts and date range from edgar_sentiment."""
+        return self.query(
+            """
+            SELECT ticker,
+                   COUNT(*)           AS n_filings,
+                   MIN(filing_date)   AS first_filing,
+                   MAX(filing_date)   AS last_filing
+            FROM edgar_sentiment
+            GROUP BY ticker
+            ORDER BY ticker
+            """
         )
 
     def write(self, df: pl.DataFrame, table: str) -> int:

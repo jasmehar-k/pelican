@@ -105,6 +105,24 @@ def run_backtest(
     if panel.is_empty():
         raise ValueError("No price data found for the backtest period.")
 
+    # Fetch edgar sentiment panel once if the signal needs it.
+    edgar_panel: pl.DataFrame | None = None
+    if sig.spec.requires_edgar:
+        edgar_panel = store.query(
+            """
+            SELECT ticker, filing_date, tone_score, tone_delta
+            FROM edgar_sentiment
+            WHERE filing_date >= ? AND filing_date <= ?
+            ORDER BY ticker, filing_date
+            """,
+            [panel_start, config.end],
+        )
+        if edgar_panel.is_empty():
+            log.warning(
+                "no edgar sentiment data found — signal will have no scores",
+                signal=signal_name,
+            )
+
     # Fetch fundamentals panel once if the signal needs it.
     fund_panel: pl.DataFrame | None = None
     if sig.spec.requires_fundamentals:
@@ -142,6 +160,18 @@ def run_backtest(
 
         if cs.is_empty():
             continue
+
+        # Point-in-time join of edgar sentiment: most recent filing_date <= rebal_date.
+        if edgar_panel is not None and not edgar_panel.is_empty():
+            pit_edgar = (
+                edgar_panel
+                .filter(pl.col("filing_date") <= rebal_date)
+                .sort("filing_date")
+                .group_by("ticker")
+                .last()
+                .drop("filing_date")
+            )
+            cs = cs.join(pit_edgar, on="ticker", how="left")
 
         # Point-in-time join of fundamentals: use the most recent row whose
         # available_date <= rebal_date so no future data leaks in.

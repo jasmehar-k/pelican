@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     # arXiv rate limit
     arxiv_rate_limit_seconds: float = 3.0
 
+    # EDGAR rate limit (SEC policy: ≤10 req/s)
+    edgar_rate_limit_seconds: float = 0.11
+    edgar_user_agent: str = Field(
+        default="pelican-research jasmehar.kr@gmail.com",
+        alias="EDGAR_USER_AGENT",
+    )
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
