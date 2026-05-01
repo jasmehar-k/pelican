@@ -83,8 +83,23 @@ def _build_query(query: str) -> str:
     return f"({field_clauses}) AND ({ARXIV_CATEGORIES})"
 
 
+def _relevance_sort(papers: list[SearchResult], words: list[str]) -> list[SearchResult]:
+    """Re-rank by query-keyword hits: title match counts 3×, abstract match 1×."""
+    lower_words = [w.lower() for w in words]
+
+    def score(p: SearchResult) -> int:
+        title = p["title"].lower()
+        abstract = p["abstract"].lower()
+        title_hits = sum(1 for w in lower_words if w in title)
+        abstract_hits = sum(1 for w in lower_words if w in abstract)
+        return title_hits * 3 + abstract_hits
+
+    return sorted(papers, key=score, reverse=True)
+
+
 def search_arxiv(query: str, max_results: int = 10) -> list[SearchResult]:
     _rate_limit()
+    words = [w for w in re.split(r"\s+", query.strip()) if len(w) > 2] or [query]
     search_query = _build_query(query)
     params = {
         "search_query": search_query,
@@ -102,7 +117,8 @@ def search_arxiv(query: str, max_results: int = 10) -> list[SearchResult]:
             root = ET.fromstring(response.text)
             namespace = {"atom": "http://www.w3.org/2005/Atom"}
             entries = root.findall("atom:entry", namespace)
-            return [_parse_entry(e, namespace) for e in entries] if entries else []
+            papers = [_parse_entry(e, namespace) for e in entries] if entries else []
+            return _relevance_sort(papers, words)
         except (httpx.TimeoutException, httpx.NetworkError) as exc:
             last_exc = exc
             if backoff is not None:

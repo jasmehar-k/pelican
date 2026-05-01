@@ -45,6 +45,15 @@ def store_paper(arxiv_id: str, title: str, abstract: str, metadata: dict[str, An
     )
 
 
+def retrieve_for_theme(query: str, n_results: int = 5, threshold: float = 0.4) -> list[dict[str, Any]]:
+    """Return previously stored papers semantically related to *query*.
+
+    Uses a low threshold (0.4) for broad retrieval — intended to supplement
+    arXiv search results rather than deduplicate them.
+    """
+    return find_similar(query, n_results=n_results, threshold=threshold)
+
+
 def find_similar(text: str, n_results: int = 3, threshold: float = 0.92) -> list[dict[str, Any]]:
     collection = _collection()
     try:

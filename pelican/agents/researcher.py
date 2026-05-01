@@ -9,7 +9,7 @@ from pathlib import Path
 from pelican.agents.state import AgentState
 from pelican.agents.tools.pdf_extract import fetch_pdf_text
 from pelican.agents.tools.search import SearchResult, search_arxiv
-from pelican.agents.tools.vector_store import find_similar, has_paper, store_paper
+from pelican.agents.tools.vector_store import find_similar, has_paper, retrieve_for_theme, store_paper
 from pelican.utils.config import get_settings
 from pelican.utils.logging import get_logger
 
@@ -119,6 +119,25 @@ def get_hypotheses(
     fresh = [p for p in papers if not find_similar(p["abstract"], threshold=0.92)]
     context = (fresh or papers)[:5]
 
+    # When arXiv returns fewer than 3 usable papers, supplement with previously
+    # stored papers retrieved from the vector store.
+    if len(context) < 3:
+        stored = retrieve_for_theme(theme, n_results=5)
+        stored_ids = {p["arxiv_id"] for p in context}
+        for match in stored:
+            if match["arxiv_id"] not in stored_ids and len(context) < 5:
+                m = match["metadata"]
+                context.append({
+                    "title": m.get("title", ""),
+                    "authors": [a.strip() for a in m.get("authors", "").split(",") if a.strip()],
+                    "abstract": match["abstract"],
+                    "arxiv_id": match["arxiv_id"],
+                    "url": m.get("url", f"https://arxiv.org/abs/{match['arxiv_id']}"),
+                })
+                stored_ids.add(match["arxiv_id"])
+        if len(context) >= 3:
+            log.info("researcher: supplemented with stored papers", total=len(context), theme=theme)
+
     if not context:
         log.warning("researcher: no papers found", theme=theme)
         return papers, []
@@ -199,6 +218,21 @@ def _make_researcher_node(model: str | None = None):
 
         fresh = [paper for paper in papers if not find_similar(paper["abstract"], threshold=0.92)]
         context = (fresh or papers)[:5]
+
+        if len(context) < 3:
+            stored = retrieve_for_theme(theme, n_results=5)
+            stored_ids = {p["arxiv_id"] for p in context}
+            for match in stored:
+                if match["arxiv_id"] not in stored_ids and len(context) < 5:
+                    m = match["metadata"]
+                    context.append({
+                        "title": m.get("title", ""),
+                        "authors": [a.strip() for a in m.get("authors", "").split(",") if a.strip()],
+                        "abstract": match["abstract"],
+                        "arxiv_id": match["arxiv_id"],
+                        "url": m.get("url", f"https://arxiv.org/abs/{match['arxiv_id']}"),
+                    })
+                    stored_ids.add(match["arxiv_id"])
 
         signal_hypothesis: str | None = None
         arxiv_ids: list[str] = [paper["arxiv_id"] for paper in context]

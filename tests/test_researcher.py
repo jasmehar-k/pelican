@@ -7,9 +7,9 @@ import pytest
 
 from pelican.agents.graph import initial_state
 from pelican.agents.researcher import _make_researcher_node, get_hypotheses
-from pelican.agents.tools.pdf_extract import fetch_pdf_text
-from pelican.agents.tools.search import search_arxiv
-from pelican.agents.tools.vector_store import find_similar, has_paper, store_paper
+from pelican.agents.tools.pdf_extract import _clean_pdf_text, fetch_pdf_text
+from pelican.agents.tools.search import _relevance_sort, search_arxiv
+from pelican.agents.tools.vector_store import find_similar, has_paper, retrieve_for_theme, store_paper
 from pelican.data.store import DataStore
 from pelican.utils.config import get_settings
 
@@ -477,3 +477,117 @@ class TestResearchLog:
         store.init_schema()
         tables = store.query("SHOW TABLES")
         assert "research_log" in tables["name"].to_list()
+
+
+class TestRelevanceSort:
+    def _paper(self, arxiv_id, title, abstract=""):
+        return {"title": title, "abstract": abstract, "arxiv_id": arxiv_id, "authors": [], "url": ""}
+
+    def test_title_match_ranks_higher_than_abstract_only(self):
+        title_match = self._paper("1", "Momentum Strategies in Equity Markets", "unrelated content here")
+        abstract_only = self._paper("2", "Some Other Topic", "momentum appears in the body text")
+        sorted_papers = _relevance_sort([abstract_only, title_match], ["momentum"])
+        assert sorted_papers[0]["arxiv_id"] == "1"
+
+    def test_more_title_hits_ranks_higher(self):
+        two_hits = self._paper("1", "Momentum Factor Cross-Section", "")
+        one_hit = self._paper("2", "Momentum Study", "")
+        sorted_papers = _relevance_sort([one_hit, two_hits], ["momentum", "cross-section"])
+        assert sorted_papers[0]["arxiv_id"] == "1"
+
+    def test_preserves_all_papers(self):
+        papers = [self._paper(str(i), f"Paper {i}") for i in range(5)]
+        result = _relevance_sort(papers, ["momentum"])
+        assert len(result) == 5
+
+    def test_empty_list_returns_empty(self):
+        assert _relevance_sort([], ["momentum"]) == []
+
+
+class TestPdfCleaning:
+    def test_strips_high_garble_lines(self):
+        garbled = "α∑β∫γ∂δ∇ε∞ζ∧η∨θ∩ι∪κ⊂λ⊃μ⊄ν⊆ξ⊇o⊕π⊗ρ⊥σ⋅τ⌈υ⌉φ⌊χ⌋ψω"
+        clean_line = "Stocks with lower volatility tend to earn higher returns."
+        text = f"{garbled}\n{clean_line}"
+        result = _clean_pdf_text(text)
+        assert garbled not in result
+        assert clean_line in result
+
+    def test_preserves_normal_text(self):
+        text = "Factor investing is a well-established approach.\nMomentum predicts returns."
+        assert _clean_pdf_text(text) == text
+
+    def test_collapses_multiple_blank_lines(self):
+        text = "line one\n\n\n\n\nline two"
+        result = _clean_pdf_text(text)
+        assert "\n\n\n" not in result
+        assert "line one" in result
+        assert "line two" in result
+
+    def test_empty_string_returns_empty(self):
+        assert _clean_pdf_text("") == ""
+
+
+class TestRetrieveForTheme:
+    def test_returns_stored_relevant_paper(self, tmp_path, monkeypatch):
+        _configure_env(monkeypatch, tmp_path)
+        store_paper(
+            "2401.00001", "Momentum in Equity Markets",
+            "Cross-sectional momentum predicts returns over 12-month horizons.",
+            {"url": "https://arxiv.org/abs/2401.00001"},
+        )
+        results = retrieve_for_theme("momentum equity returns", threshold=0.0)
+        assert any(r["arxiv_id"] == "2401.00001" for r in results)
+
+    def test_empty_store_returns_empty(self, tmp_path, monkeypatch):
+        _configure_env(monkeypatch, tmp_path)
+        assert retrieve_for_theme("momentum") == []
+
+    def test_threshold_filters_low_similarity(self, tmp_path, monkeypatch):
+        _configure_env(monkeypatch, tmp_path)
+        store_paper("2401.00001", "Title", "Abstract", {"url": "u"})
+        # threshold=1.0 means only perfect matches pass
+        results = retrieve_for_theme("completely unrelated topic xyz", threshold=1.0)
+        assert results == []
+
+    def test_researcher_supplements_thin_arxiv_results(self, tmp_path, monkeypatch):
+        _configure_env(monkeypatch, tmp_path)
+        stored_match = {
+            "arxiv_id": "2401.stored",
+            "similarity": 0.7,
+            "abstract": "Previously stored momentum paper.",
+            "metadata": {
+                "title": "Stored Momentum Paper",
+                "authors": "Alice Smith",
+                "url": "https://arxiv.org/abs/2401.stored",
+            },
+        }
+        thin_papers = [
+            {
+                "title": "One Paper",
+                "authors": [],
+                "abstract": "Short abstract.",
+                "arxiv_id": "2401.00001",
+                "url": "https://arxiv.org/abs/2401.00001",
+            }
+        ]
+        response = MagicMock()
+        response.content = (
+            "HYPOTHESIS_1: Stocks with strong recent price momentum tend to continue "
+            "outperforming over the next month due to investor underreaction to news.\n"
+            "DATA_FIELDS_1: close_21d, close_252d\n"
+            "SIGNAL_NAME_1: mom_12_1\n"
+        )
+
+        with (
+            patch("pelican.agents.researcher.search_arxiv", return_value=thin_papers),
+            patch("pelican.agents.researcher.find_similar", return_value=[]),
+            patch("pelican.agents.researcher.retrieve_for_theme", return_value=[stored_match]),
+            patch("pelican.agents.researcher._get_llm", return_value=MagicMock(invoke=lambda _: response)),
+            patch("pelican.agents.researcher.store_paper"),
+            patch("pelican.agents.researcher.has_paper", return_value=True),
+        ):
+            papers, hypotheses = get_hypotheses("momentum", n=1)
+
+        # context was supplemented — LLM received 2 papers not 1
+        assert len(hypotheses) == 1
