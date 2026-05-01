@@ -130,6 +130,12 @@ def search_arxiv(query: str, max_results: int = 10) -> list[SearchResult]:
             last_exc = exc
             if backoff is not None:
                 time.sleep(backoff)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 429 and backoff is not None:
+                last_exc = exc
+                time.sleep(backoff)
+            else:
+                raise
         except Exception:
             raise
 

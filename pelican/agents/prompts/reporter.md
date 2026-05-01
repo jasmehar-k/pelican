@@ -11,3 +11,7 @@ Write a single paragraph of 100-150 words covering:
 
 Tone: professional, precise, no filler. Write in third person ("The signal...").
 Do not include headers, bullet points, or code blocks — plain prose only.
+
+CRITICAL: Output ONLY the final memo paragraph. Do not show any reasoning, drafting,
+word counting, or thinking process. Your entire response must be the memo itself and
+nothing else.

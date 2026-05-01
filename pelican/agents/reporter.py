@@ -29,6 +29,23 @@ def _load_system_prompt() -> str:
     return (Path(__file__).parent / "prompts" / "reporter.md").read_text()
 
 
+def _extract_memo(raw: str) -> str:
+    """Extract the final memo paragraph from LLM output.
+
+    Some models prefix the memo with chain-of-thought (word counts, drafts,
+    reasoning).  We look for the first paragraph that reads like a memo:
+    starts with 'The signal' or is a long prose sentence (>= 60 chars, no
+    colon at the start).  Fallback: return the longest paragraph.
+    """
+    paragraphs = [p.strip() for p in raw.strip().split("\n\n") if p.strip()]
+    for para in paragraphs:
+        first_line = para.splitlines()[0]
+        if first_line.startswith(("The signal", "This signal", "The factor", "This factor")):
+            return para
+    # Fallback: return the longest paragraph (likely the actual memo)
+    return max(paragraphs, key=len, default=raw.strip())
+
+
 def _build_memo_prompt(state: AgentState) -> str:
     arxiv_refs = ", ".join(state.get("arxiv_ids") or []) or "none"
     return "\n".join([
@@ -60,7 +77,7 @@ def _make_reporter_node(store: Any, model: str | None = None):
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": _build_memo_prompt(state)},
                 ])
-                memo = response.content.strip()
+                memo = _extract_memo(response.content)
                 log.info("reporter: memo generated", theme=state["theme"])
             except Exception as exc:
                 log.warning("reporter: memo generation failed", error=str(exc))
