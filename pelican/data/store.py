@@ -54,6 +54,18 @@ CREATE TABLE IF NOT EXISTS research_log (
     sharpe_net         DOUBLE,
     feedback           TEXT
 );
+
+CREATE TABLE IF NOT EXISTS signal_memos (
+    run_id      VARCHAR,
+    ts          TIMESTAMPTZ DEFAULT current_timestamp,
+    theme       VARCHAR,
+    decision    VARCHAR,
+    ic_tstat    DOUBLE,
+    sharpe_net  DOUBLE,
+    retry_count INTEGER,
+    arxiv_ids   VARCHAR[],
+    memo        TEXT
+);
 """
 
 
@@ -85,6 +97,25 @@ class DataStore:
                 state.get("ic_tstat"),
                 state.get("sharpe_net"),
                 state.get("feedback"),
+            ],
+        )
+
+    def log_memo(self, state: dict[str, Any]) -> None:
+        self._conn.execute(
+            """
+            INSERT INTO signal_memos (
+                run_id, theme, decision, ic_tstat, sharpe_net, retry_count, arxiv_ids, memo
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                state.get("run_id"),
+                state.get("theme"),
+                state.get("decision"),
+                state.get("ic_tstat"),
+                state.get("sharpe_net"),
+                state.get("retry_count", 0),
+                state.get("arxiv_ids") or [],
+                state.get("memo"),
             ],
         )
 

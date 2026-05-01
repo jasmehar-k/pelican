@@ -196,10 +196,21 @@ def _run_one_signal_streaming(
         t.add_row("IC t-stat", f"{result['ic_tstat']:.3f}")
     if result.get("sharpe_net") is not None:
         t.add_row("Net Sharpe", f"{result['sharpe_net']:.3f}")
+    retry_count = result.get("retry_count", 0)
+    if retry_count > 1:
+        t.add_row("Graph retries", str(retry_count - 1))
 
     console.print()
     console.print(Panel(t, title=f"[{colour}]{signal_label}[/]",
                         border_style="green" if accepted else "red"))
+
+    if accepted and result.get("memo"):
+        console.print(Panel(
+            result["memo"],
+            title="[bold green]Investment memo[/]",
+            border_style="green",
+            padding=(1, 2),
+        ))
 
     if result.get("errors"):
         console.print("\n[dim]Retry log:[/]")
@@ -274,6 +285,7 @@ def _run_multi_signal(args, store, config) -> list[dict]:
     summary.add_column("Decision", justify="center")
     summary.add_column("IC t-stat", justify="right")
     summary.add_column("Net Sharpe", justify="right")
+    summary.add_column("Retries", justify="right")
     summary.add_column("Hypothesis")
 
     for r in results:
@@ -281,11 +293,22 @@ def _run_multi_signal(args, store, config) -> list[dict]:
         dec = "[bold green]ACCEPT ✓[/]" if accepted else "[bold red]REJECT ✗[/]"
         ic = f"{r['ic_tstat']:.3f}" if r.get("ic_tstat") is not None else "—"
         sh = f"{r['sharpe_net']:.3f}" if r.get("sharpe_net") is not None else "—"
+        retries = str(max(0, r.get("retry_count", 0) - 1))
         raw_hyp = r.get("_hypothesis") or "—"
         hyp = (raw_hyp[:77] + "…") if len(raw_hyp) > 80 else raw_hyp
-        summary.add_row(r.get("_signal_name", "?"), dec, ic, sh, hyp)
+        summary.add_row(r.get("_signal_name", "?"), dec, ic, sh, retries, hyp)
 
     console.print(Panel(summary, title="[bold]Research run summary[/]", border_style="dim"))
+
+    # Print memos for any accepted signals
+    for r in results:
+        if r.get("decision") == "accept" and r.get("memo"):
+            console.print(Panel(
+                r["memo"],
+                title=f"[bold green]Investment memo — {r.get('_signal_name', '?')}[/]",
+                border_style="green",
+                padding=(1, 2),
+            ))
 
     return results
 
@@ -423,10 +446,21 @@ def _run_streaming(args, store, config, with_researcher: bool = True) -> dict:
         t.add_row("IC t-stat", f"{result['ic_tstat']:.3f}")
     if result.get("sharpe_net") is not None:
         t.add_row("Net Sharpe", f"{result['sharpe_net']:.3f}")
+    retry_count = result.get("retry_count", 0)
+    if retry_count > 1:
+        t.add_row("Graph retries", str(retry_count - 1))
 
     console.print()
     console.print(Panel(t, title=f"[{colour}]Critic decision[/]",
                         border_style="green" if accepted else "red"))
+
+    if accepted and result.get("memo"):
+        console.print(Panel(
+            result["memo"],
+            title="[bold green]Investment memo[/]",
+            border_style="green",
+            padding=(1, 2),
+        ))
 
     if result.get("errors"):
         console.print("\n[dim]Retry log:[/]")
@@ -460,9 +494,14 @@ def _run_plain(args, store, config, with_researcher: bool = True) -> dict:
         print("\nRetry errors:")
         for e in result["errors"]:
             print(f"  {e}")
+    if result.get("retry_count", 0) > 1:
+        print(f"Graph retries : {result['retry_count'] - 1}")
     if result["generated_code"]:
         print("\n--- Generated code ---")
         print(result["generated_code"])
+    if result.get("memo"):
+        print("\n--- Investment memo ---")
+        print(result["memo"])
     return result
 
 

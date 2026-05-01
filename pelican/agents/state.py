@@ -17,3 +17,5 @@ class AgentState(TypedDict):
     signal_hypothesis: str | None
     arxiv_ids: list[str]
     run_id: str
+    retry_count: int            # graph-level coder→critic cycles completed
+    memo: str | None            # Reporter-generated analyst memo (accepted signals only)

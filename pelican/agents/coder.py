@@ -76,13 +76,23 @@ def _extract_code(text: str) -> str | None:
     return match.group(1).strip() if match else None
 
 
-def _build_user_message(description: str, errors: list[str]) -> str:
+def _build_user_message(
+    description: str,
+    errors: list[str],
+    critic_feedback: str | None = None,
+) -> str:
     parts = [f"Factor description: {description}"]
+    if critic_feedback:
+        parts.append(
+            f"\nYour previous signal was backtested and REJECTED by the critic: {critic_feedback}"
+            "\n\nTry a fundamentally different implementation approach — "
+            "different columns, different formula, or a different economic mechanism."
+        )
     if errors:
         recent = errors[-3:]
         error_block = "\n".join(f"  - {e}" for e in recent)
         parts.append(
-            f"\nPrevious attempt(s) failed with these errors:\n{error_block}"
+            f"\nPrevious code attempt(s) failed with these errors:\n{error_block}"
             "\n\nPlease fix all listed issues in your next implementation."
         )
     return "\n".join(parts)
@@ -108,6 +118,8 @@ def _make_coder_node(
         llm = _get_llm(model, streaming=streaming, callbacks=callbacks)
         system_prompt = _load_system_prompt()
         errors: list[str] = list(state.get("errors") or [])
+        retry_count = state.get("retry_count", 0) + 1
+        critic_feedback = state.get("feedback") if retry_count > 1 else None
 
         for attempt in range(1, MAX_RETRIES + 1):
             if on_attempt_start:
@@ -116,6 +128,7 @@ def _make_coder_node(
             user_msg = _build_user_message(
                 state.get("signal_hypothesis") or state["theme"],
                 errors,
+                critic_feedback=critic_feedback,
             )
 
             try:
@@ -149,14 +162,14 @@ def _make_coder_node(
             success, error_msg, _ = execute_signal_code(code)
             if success:
                 log.info("coder succeeded", attempt=attempt)
-                return {**state, "generated_code": code, "errors": errors}
+                return {**state, "generated_code": code, "errors": errors, "retry_count": retry_count}
 
             err = f"attempt {attempt}: {error_msg}"
             log.warning("sandbox rejected code", attempt=attempt, error=error_msg)
             errors.append(err)
 
         log.warning("coder exhausted retries", retries=MAX_RETRIES, theme=state["theme"])
-        return {**state, "generated_code": None, "errors": errors}
+        return {**state, "generated_code": None, "errors": errors, "retry_count": retry_count}
 
     return coder_node
 
