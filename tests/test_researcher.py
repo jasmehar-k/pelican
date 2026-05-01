@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pelican.agents.graph import initial_state
-from pelican.agents.researcher import _make_researcher_node
+from pelican.agents.researcher import _make_researcher_node, get_hypotheses
 from pelican.agents.tools.pdf_extract import fetch_pdf_text
 from pelican.agents.tools.search import search_arxiv
 from pelican.agents.tools.vector_store import find_similar, has_paper, store_paper
@@ -332,6 +332,121 @@ class TestResearcherNode:
     def test_run_id_set_in_initial_state(self):
         state = initial_state("theme")
         uuid.UUID(state["run_id"])
+
+
+class TestGetHypotheses:
+    """Tests for the multi-signal get_hypotheses() public function."""
+
+    PAPERS = [
+        {
+            "title": "Momentum and Drift",
+            "authors": ["Alice Smith"],
+            "abstract": "Signals built from post-earnings drift can persist.",
+            "arxiv_id": "2401.00001",
+            "url": "https://arxiv.org/abs/2401.00001",
+        }
+    ]
+
+    def _mock_llm(self, text: str):
+        msg = MagicMock()
+        msg.content = text
+        llm = MagicMock()
+        llm.invoke.return_value = msg
+        return llm
+
+    def test_returns_n_hypotheses(self, tmp_path, monkeypatch):
+        _configure_env(monkeypatch, tmp_path)
+        response = (
+            "HYPOTHESIS_1: Earnings revision breadth predicts returns via analyst herding.\n"
+            "DATA_FIELDS_1: close, close_21d\n"
+            "SIGNAL_NAME_1: earnings_revision\n\n"
+            "HYPOTHESIS_2: Return on equity captures capital efficiency.\n"
+            "DATA_FIELDS_2: roe\n"
+            "SIGNAL_NAME_2: quality_roe\n\n"
+            "HYPOTHESIS_3: Low volatility stocks earn higher risk-adjusted returns.\n"
+            "DATA_FIELDS_3: vol_21d\n"
+            "SIGNAL_NAME_3: low_vol\n"
+        )
+        with (
+            patch("pelican.agents.researcher.search_arxiv", return_value=self.PAPERS),
+            patch("pelican.agents.researcher.find_similar", return_value=[]),
+            patch("pelican.agents.researcher._get_llm", return_value=self._mock_llm(response)),
+        ):
+            papers, hypotheses = get_hypotheses("earnings quality", n=3)
+
+        assert papers == self.PAPERS
+        assert len(hypotheses) == 3
+        assert hypotheses[0]["signal_name"] == "earnings_revision"
+        assert hypotheses[1]["signal_name"] == "quality_roe"
+        assert hypotheses[2]["signal_name"] == "low_vol"
+        assert "roe" in hypotheses[1]["data_fields"]
+
+    def test_each_hypothesis_has_required_keys(self, tmp_path, monkeypatch):
+        _configure_env(monkeypatch, tmp_path)
+        response = (
+            "HYPOTHESIS_1: Some rationale.\n"
+            "DATA_FIELDS_1: close_252d, close_21d\n"
+            "SIGNAL_NAME_1: momentum\n"
+        )
+        with (
+            patch("pelican.agents.researcher.search_arxiv", return_value=self.PAPERS),
+            patch("pelican.agents.researcher.find_similar", return_value=[]),
+            patch("pelican.agents.researcher._get_llm", return_value=self._mock_llm(response)),
+        ):
+            _, hypotheses = get_hypotheses("momentum", n=1)
+
+        h = hypotheses[0]
+        assert "hypothesis" in h
+        assert "data_fields" in h
+        assert "signal_name" in h
+        assert isinstance(h["data_fields"], list)
+
+    def test_empty_papers_returns_no_hypotheses(self, tmp_path, monkeypatch):
+        _configure_env(monkeypatch, tmp_path)
+        with patch("pelican.agents.researcher.search_arxiv", return_value=[]):
+            papers, hypotheses = get_hypotheses("anything", n=3)
+
+        assert papers == []
+        assert hypotheses == []
+
+    def test_papers_stored_in_vector_store(self, tmp_path, monkeypatch):
+        _configure_env(monkeypatch, tmp_path)
+        response = "HYPOTHESIS_1: x\nDATA_FIELDS_1: close\nSIGNAL_NAME_1: s\n"
+        with (
+            patch("pelican.agents.researcher.search_arxiv", return_value=self.PAPERS),
+            patch("pelican.agents.researcher.find_similar", return_value=[]),
+            patch("pelican.agents.researcher._get_llm", return_value=self._mock_llm(response)),
+            patch("pelican.agents.researcher.store_paper") as mock_store,
+            patch("pelican.agents.researcher.has_paper", return_value=False),
+        ):
+            get_hypotheses("theme", n=1)
+
+        assert mock_store.called
+
+    def test_multi_user_message_requests_n_hypotheses(self, tmp_path, monkeypatch):
+        _configure_env(monkeypatch, tmp_path)
+        captured = []
+
+        def fake_invoke(messages):
+            captured.extend(messages)
+            msg = MagicMock()
+            msg.content = "HYPOTHESIS_1: x\nDATA_FIELDS_1: close\nSIGNAL_NAME_1: s\n"
+            return msg
+
+        mock_llm = MagicMock()
+        mock_llm.invoke.side_effect = fake_invoke
+        with (
+            patch("pelican.agents.researcher.search_arxiv", return_value=self.PAPERS),
+            patch("pelican.agents.researcher.find_similar", return_value=[]),
+            patch("pelican.agents.researcher._get_llm", return_value=mock_llm),
+        ):
+            get_hypotheses("earnings quality", n=3)
+
+        user_msg = captured[1]["content"]
+        assert "HYPOTHESIS_1" in user_msg
+        assert "HYPOTHESIS_2" in user_msg
+        assert "HYPOTHESIS_3" in user_msg
+        assert "3" in user_msg
 
 
 class TestResearchLog:

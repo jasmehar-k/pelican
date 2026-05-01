@@ -58,6 +58,85 @@ def _parse_flag(text: str, key: str) -> str | None:
     return match.group(1).strip() if match else None
 
 
+def _build_multi_user_message(theme: str, papers: list[SearchResult], n: int) -> str:
+    numbered = "\n\n".join(
+        f"HYPOTHESIS_{i}: <2-3 sentences: economic rationale + which columns to use>\n"
+        f"DATA_FIELDS_{i}: comma-separated exact column names from the available list\n"
+        f"SIGNAL_NAME_{i}: short_snake_case"
+        for i in range(1, n + 1)
+    )
+    return "\n".join([
+        f"Research theme: {theme}",
+        "",
+        "Paper summaries:",
+        _format_papers(papers) if papers else "No papers were found.",
+        "",
+        f"Generate exactly {n} DISTINCT signal hypotheses grounded in these papers.",
+        "Each must use a different economic mechanism or different data fields.",
+        "Return this structure — one block per signal:",
+        "",
+        numbered,
+    ])
+
+
+def _parse_multi_response(text: str, n: int) -> list[dict]:
+    results = []
+    for i in range(1, n + 1):
+        h = _parse_flag(text, f"HYPOTHESIS_{i}")
+        df = _parse_flag(text, f"DATA_FIELDS_{i}") or ""
+        sn = _parse_flag(text, f"SIGNAL_NAME_{i}")
+        if h:
+            results.append({
+                "hypothesis": h,
+                "data_fields": [f.strip() for f in df.split(",") if f.strip()],
+                "signal_name": sn or f"signal_{i}",
+            })
+    return results
+
+
+def get_hypotheses(
+    theme: str,
+    n: int = 3,
+    model: str | None = None,
+) -> tuple[list[SearchResult], list[dict]]:
+    """Search arXiv once and return up to *n* distinct signal hypotheses.
+
+    Returns (papers, hypotheses).  Each hypothesis is a dict with keys:
+        hypothesis   — 2-3 sentence economic rationale
+        data_fields  — list of column names to use
+        signal_name  — short snake_case identifier
+
+    Falls back to an empty hypotheses list if no papers are found.
+    """
+    papers = search_arxiv(theme, max_results=10)
+    fresh = [p for p in papers if not find_similar(p["abstract"], threshold=0.92)]
+    context = (fresh or papers)[:5]
+
+    if not context:
+        log.warning("researcher: no papers found", theme=theme)
+        return papers, []
+
+    llm = _get_llm(model)
+    system_prompt = _load_system_prompt()
+    response = llm.invoke([
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": _build_multi_user_message(theme, context, n)},
+    ])
+    hypotheses = _parse_multi_response(response.content, n)
+
+    for paper in context:
+        if not has_paper(paper["arxiv_id"]):
+            store_paper(
+                paper["arxiv_id"],
+                paper["title"],
+                paper["abstract"],
+                {"url": paper["url"], "authors": paper["authors"]},
+            )
+
+    log.info("researcher: hypotheses extracted", n=len(hypotheses), theme=theme)
+    return papers, hypotheses
+
+
 def _parse_bool(text: str, key: str) -> bool:
     value = _parse_flag(text, key)
     if value is None:
