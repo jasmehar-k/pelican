@@ -80,6 +80,12 @@ def compute_signal(df: pl.DataFrame) -> pl.Series:
     return (1.0 / df["pe_ratio"]).alias("value_pe")
 ```
 
+## When to use fundamental columns
+
+Only use `pe_ratio`, `pb_ratio`, `roe`, `debt_to_equity`, or `market_cap` if the factor
+description explicitly references fundamental data (earnings, book value, equity, debt, size).
+For momentum, volatility, and price-based signals, use only price columns.
+
 ## DO NOT use these patterns
 
 - **`.shift()`** — there is only 1 row per ticker; shift always returns null

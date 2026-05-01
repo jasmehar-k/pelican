@@ -357,13 +357,13 @@ class TestGetHypotheses:
     def test_returns_n_hypotheses(self, tmp_path, monkeypatch):
         _configure_env(monkeypatch, tmp_path)
         response = (
-            "HYPOTHESIS_1: Earnings revision breadth predicts returns via analyst herding.\n"
+            "HYPOTHESIS_1: Earnings revision breadth predicts future returns because analysts herd toward consensus, causing prices to drift in the direction of revisions.\n"
             "DATA_FIELDS_1: close, close_21d\n"
             "SIGNAL_NAME_1: earnings_revision\n\n"
-            "HYPOTHESIS_2: Return on equity captures capital efficiency.\n"
+            "HYPOTHESIS_2: Return on equity captures how efficiently a firm converts equity into profit, with high-ROE firms rewarded by the market over time.\n"
             "DATA_FIELDS_2: roe\n"
             "SIGNAL_NAME_2: quality_roe\n\n"
-            "HYPOTHESIS_3: Low volatility stocks earn higher risk-adjusted returns.\n"
+            "HYPOTHESIS_3: Low volatility stocks earn higher risk-adjusted returns because institutional investors overpay for lottery-like high-vol names.\n"
             "DATA_FIELDS_3: vol_21d\n"
             "SIGNAL_NAME_3: low_vol\n"
         )
