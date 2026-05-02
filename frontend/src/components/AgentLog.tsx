@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import {
 	AgentStreamEvent,
@@ -44,6 +44,7 @@ export function AgentLog({
 		critic: { ...EMPTY_NODE },
 	}))
 	const [liveEvent, setLiveEvent] = useState<AgentStreamEvent | null>(null)
+	const closeRef = useRef<(() => void) | null>(null)
 
 	useEffect(() => {
 		setRunId(externalRunId ?? null)
@@ -98,10 +99,14 @@ export function AgentLog({
 				}
 				if (event.event === 'run_complete') {
 					setStatus('done')
+					// Close the EventSource so onerror doesn't fire when the
+					// server ends the connection and override our 'done' status.
+					closeRef.current?.()
 				}
 				if (event.event === 'run_error') {
 					setStatus('error')
 					setError(String(event.data.error || 'run failed'))
+					closeRef.current?.()
 				}
 			},
 			onError: (streamError) => {
@@ -109,6 +114,7 @@ export function AgentLog({
 				setError(streamError.message)
 			},
 		})
+		closeRef.current = close
 		return close
 	}, [runId])
 
@@ -120,9 +126,14 @@ export function AgentLog({
 			coder: { ...EMPTY_NODE },
 			critic: { ...EMPTY_NODE },
 		})
-		const response = await startAgentRun({ theme, with_researcher: true })
-		setRunId(response.run_id)
-		onRunCreated?.(response.run_id)
+		try {
+			const response = await startAgentRun({ theme, with_researcher: true })
+			setRunId(response.run_id)
+			onRunCreated?.(response.run_id)
+		} catch (startError) {
+			setStatus('error')
+			setError(startError instanceof Error ? startError.message : 'failed to start run')
+		}
 	}
 
 	return (

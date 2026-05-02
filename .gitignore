@@ -19,6 +19,8 @@ data/*.duckdb
 # Frontend
 frontend/node_modules/
 frontend/dist/
+frontend/src/**/*.js
+frontend/src/**/*.js.map
 
 # Notebooks output
 notebooks/*.ipynb
