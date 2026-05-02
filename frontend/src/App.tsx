@@ -20,6 +20,7 @@ export default function App() {
 			<header className="topbar">
 				<NavLink to="/" className="topbar-brand">
 					<img src={pelicanLogo} alt="Pelican" className="topbar-logo" />
+					<span className="topbar-wordmark">Pelican</span>
 				</NavLink>
 				<nav className="nav">
 					{navItems.map((item) => (

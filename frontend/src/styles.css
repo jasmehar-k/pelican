@@ -56,22 +56,44 @@ button {
 
 .topbar {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 20px;
+  flex-wrap: wrap;
   margin-bottom: 28px;
 }
 
 .topbar-brand {
-  display: flex;
+  display: inline-flex;
   align-items: center;
+  gap: 18px;
   flex-shrink: 0;
+  min-width: max-content;
+  overflow: visible;
+}
+
+.topbar-brand::after {
+  content: "Pelican";
+  display: block;
+  font-size: 6rem;
+  font-weight: 800;
+  letter-spacing: -0.06em;
+  color: var(--text);
+  line-height: 1;
+  white-space: nowrap;
+  flex-shrink: 0;
+  text-rendering: geometricPrecision;
 }
 
 .topbar-logo {
-  height: 36px;
+  height: 130px;
   width: auto;
   display: block;
+  flex-shrink: 0;
+}
+
+.topbar-wordmark {
+  display: none;
 }
 
 .panel h2,
@@ -94,6 +116,7 @@ button {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  margin-left: auto;
 }
 
 .nav-link,
@@ -524,6 +547,14 @@ button:focus-visible {
     align-items: stretch;
   }
 
+  .topbar-brand {
+    align-self: flex-start;
+  }
+
+  .nav {
+    margin-left: 0;
+  }
+
   .table-shell table {
     min-width: 680px;
   }
@@ -532,6 +563,22 @@ button:focus-visible {
 @media (max-width: 720px) {
   .app-shell {
     padding: 16px;
+  }
+
+  .topbar-brand {
+    gap: 14px;
+  }
+
+  .topbar-logo {
+    height: 72px;
+  }
+
+  .topbar-wordmark {
+    font-size: 4.5rem;
+  }
+
+  .topbar-brand::after {
+    font-size: 4.5rem;
   }
 
   .nav {
