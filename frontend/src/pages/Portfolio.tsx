@@ -100,8 +100,8 @@ export default function PortfolioPage() {
 				<div className="panel-header">
 					<div>
 						<div className="eyebrow">Portfolio</div>
-						<h2>Selectable signal basket</h2>
-						<p>Pick a signal set, optimize it, and inspect the weight and risk footprint.</p>
+						<h2>Portfolio construction</h2>
+						<p>Select signals, optimize weights, and inspect the risk footprint.</p>
 					</div>
 					<button className="primary-button" type="button" onClick={optimizeCurrentPortfolio} disabled={busy || selectedSignals.length === 0}>
 						{busy ? 'Optimizing…' : 'Optimize portfolio'}
@@ -198,7 +198,6 @@ export default function PortfolioPage() {
 				<div className="panel-header">
 					<div>
 						<div className="eyebrow">Risk attribution</div>
-						<h2>Current optimizer output</h2>
 					</div>
 				</div>
 

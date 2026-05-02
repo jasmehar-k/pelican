@@ -19,9 +19,9 @@ export default function SignalsPage() {
 			<section className="panel">
 				<div className="panel-header">
 					<div>
-						<div className="eyebrow">Signal discovery</div>
-						<h2>Sortable factor browser</h2>
-						<p>Use the table to compare quality, then open any factor tearsheet for the full backtest.</p>
+						<div className="eyebrow">Signals</div>
+						<h2>Factor library</h2>
+						<p>Compare quality across signals, then open any factor tearsheet for the full backtest.</p>
 					</div>
 				</div>
 				<SignalBrowser signals={signals} onSignalSelect={(signal) => navigate(`/signals/${signal.name}`)} />

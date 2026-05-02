@@ -1,5 +1,6 @@
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
 
+import pelicanLogo from './assets/pelican.png'
 import DashboardPage from './pages/Dashboard'
 import FactorTearsheetPage from './pages/FactorTearsheet'
 import PortfolioPage from './pages/Portfolio'
@@ -17,10 +18,9 @@ export default function App() {
 	return (
 		<div className="app-shell">
 			<header className="topbar">
-				<div>
-					<div className="eyebrow">Pelican</div>
-					<h1>React Dashboard</h1>
-				</div>
+				<NavLink to="/" className="topbar-brand">
+					<img src={pelicanLogo} alt="Pelican" className="topbar-logo" />
+				</NavLink>
 				<nav className="nav">
 					{navItems.map((item) => (
 						<NavLink

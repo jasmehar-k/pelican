@@ -62,7 +62,18 @@ button {
   margin-bottom: 28px;
 }
 
-.topbar h1,
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.topbar-logo {
+  height: 36px;
+  width: auto;
+  display: block;
+}
+
 .panel h2,
 .chart-header h3,
 .hero h2 {

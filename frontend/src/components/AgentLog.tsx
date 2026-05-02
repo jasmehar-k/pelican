@@ -142,9 +142,8 @@ export function AgentLog({
 		<section className={`panel agent-log ${compact ? 'agent-log-compact' : ''}`}>
 			<div className="panel-header">
 				<div>
-					<div className="eyebrow">Live agent run</div>
-					<h2>LangGraph nodes in motion</h2>
-					<p>Launch a new research run and watch the graph update in real time.</p>
+					<div className="eyebrow">Agent</div>
+					<h2>Run a research pipeline</h2>
 				</div>
 				<span className={badgeClass(status)}>{status}</span>
 			</div>

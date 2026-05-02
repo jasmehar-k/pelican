@@ -53,7 +53,6 @@ export default function DashboardPage() {
 		<main className="page-grid page-grid-dashboard">
 			<section className="hero panel">
 				<div>
-					<div className="eyebrow">Interview demo</div>
 					<h2>Signals, live agents, tearsheets, and portfolio output in one place.</h2>
 					<p>
 						Start a research run, inspect the ranking table, and trace each result back to the papers that inspired it.
