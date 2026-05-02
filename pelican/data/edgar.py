@@ -273,7 +273,11 @@ def extract_mda(html_text: str) -> str:
             break  # take the first substantial hit
         pos = start_idx + 1
 
-    return best or plain[:_MDA_MAX_CHARS]
+    # Do not fall back to raw plaintext: if no Item 7 section was found, returning
+    # XBRL-derived content would cause score_tone() to produce a false 0.0 that is
+    # stored as a valid score and never retried.  An empty string causes score_tone()
+    # to return None, which keeps the row retriable on the next seed run.
+    return best
 
 
 # ---------------------------------------------------------------------------
@@ -526,7 +530,7 @@ def seed_edgar_sentiment(
                     "filing_type": filing_type,
                     "tone_score": tone,
                     "tone_delta": None,
-                    "model": model or s.openrouter_model,
+                    "model": model or s.edgar_tone_model,
                 })
                 log.info("edgar: scored filing", ticker=ticker,
                          period_end=fm["period_end"], tone_score=tone)
@@ -555,6 +559,19 @@ def seed_edgar_sentiment(
     new_rows = [r for r in with_deltas if r.get("model") is not None]
     if not new_rows:
         return 0
+
+    # Degenerate-score guard: if >50% of successfully-scored rows are exactly 0.0,
+    # it likely means MD&A extraction silently failed (XBRL garbage → LLM → 0.0).
+    scored = [r for r in new_rows if r.get("tone_score") is not None]
+    if scored:
+        zero_frac = sum(1 for r in scored if r["tone_score"] == 0.0) / len(scored)
+        if zero_frac > 0.5:
+            log.warning(
+                "edgar: majority of scores are exactly 0.0 — MD&A extraction may "
+                "have failed; check cached HTML files and consider re-seeding",
+                zero_fraction=round(zero_frac, 2),
+                n_scored=len(scored),
+            )
 
     df = pl.DataFrame(new_rows).select([
         pl.col("ticker").cast(pl.Utf8),

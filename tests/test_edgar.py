@@ -116,11 +116,11 @@ class TestExtractMda:
         result = extract_mda(_SAMPLE_HTML)
         assert "Market Risk" not in result
 
-    def test_fallback_when_no_item_7(self):
+    def test_returns_empty_when_no_item_7(self):
+        # No fallback to raw text — avoids sending XBRL garbage to scorer as a false 0.0
         html = "<html><body><p>No standard structure here. Just text.</p></body></html>"
         result = extract_mda(html)
-        assert isinstance(result, str)
-        assert len(result) > 0
+        assert result == ""
 
     def test_output_never_exceeds_max_chars(self):
         long_html = "<p>Item 7. MD&A</p>" + "<p>" + "x" * 10000 + "</p>"
@@ -128,7 +128,8 @@ class TestExtractMda:
         assert len(result) <= 4_000
 
     def test_strips_html_in_mda(self):
-        html = "<p>Item 7.</p><p><b>Strong growth</b> in <i>all segments</i>.</p><p>Item 8.</p>"
+        prose = " Revenue and operating income both grew substantially year over year." * 4
+        html = f"<p>Item 7.</p><p><b>Strong growth</b> in <i>all segments</i>.{prose}</p><p>Item 8.</p>"
         result = extract_mda(html)
         assert "<b>" not in result
         assert "<i>" not in result
@@ -140,7 +141,12 @@ class TestExtractMda:
         assert result == ""
 
     def test_ixbrl_namespace_tags_stripped(self):
-        html = "<html><body><p>Item 7.</p><p><ix:nonfraction>1234</ix:nonfraction> Revenue grew.</p><p>Item 8.</p></body></html>"
+        prose = " Net revenue increased driven by strong product demand across all regions." * 3
+        html = (
+            f"<html><body><p>Item 7.</p>"
+            f"<p><ix:nonfraction>1234</ix:nonfraction> Revenue grew.{prose}</p>"
+            f"<p>Item 8.</p></body></html>"
+        )
         result = extract_mda(html)
         assert "1234" in result
         assert "ix:nonfraction" not in result
