@@ -237,12 +237,21 @@ _IXBRL_TAG = re.compile(r"</?[a-zA-Z][a-zA-Z0-9]*:[a-zA-Z][^>]*?>", re.DOTALL)
 _MDA_MIN_SECTION = 150  # chars; shorter = likely a table-of-contents entry
 
 
+_PURE_XBRL_RE = re.compile(r"<\?xml[^>]*\?>", re.IGNORECASE)
+
+
 def extract_mda(html_text: str) -> str:
     """Extract MD&A section from filing HTML.
 
     Returns up to _MDA_MAX_CHARS of the MD&A section, or the first
     _MDA_MAX_CHARS of body text if no Item 7 marker is found.
+    Returns "" for pure XBRL instance documents (no HTML/prose).
     """
+    # Pure XBRL instance documents start with <?xml ...> and have no <html> tag.
+    # These contain only machine-readable data, not MD&A prose — skip them.
+    if _PURE_XBRL_RE.match(html_text.lstrip()) and "<html" not in html_text[:500].lower():
+        return ""
+
     # Strip inline XBRL namespace tags (e.g. <ix:nonfraction>, <dei:...>)
     # while preserving their text content so MD&A prose survives.
     html_text = _IXBRL_TAG.sub("", html_text)

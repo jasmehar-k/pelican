@@ -134,6 +134,17 @@ class TestExtractMda:
         assert "<i>" not in result
         assert "Strong growth" in result
 
+    def test_returns_empty_for_pure_xbrl_document(self):
+        xbrl = "<?xml version='1.0' encoding='ASCII'?>\n<xbrl xmlns='http://xbrl.org/2005'><context/></xbrl>"
+        result = extract_mda(xbrl)
+        assert result == ""
+
+    def test_ixbrl_namespace_tags_stripped(self):
+        html = "<html><body><p>Item 7.</p><p><ix:nonfraction>1234</ix:nonfraction> Revenue grew.</p><p>Item 8.</p></body></html>"
+        result = extract_mda(html)
+        assert "1234" in result
+        assert "ix:nonfraction" not in result
+
 
 # ---------------------------------------------------------------------------
 # EDGAR API — CIK lookup
