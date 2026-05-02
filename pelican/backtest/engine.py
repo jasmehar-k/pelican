@@ -176,7 +176,7 @@ def run_backtest(
 
         # Point-in-time join of fundamentals: use the most recent row whose
         # available_date <= rebal_date so no future data leaks in.
-        if fund_panel is not None and not fund_panel.is_empty():
+        if fund_panel is not None:
             pit_fund = (
                 fund_panel
                 .filter(pl.col("available_date") <= rebal_date)
@@ -185,7 +185,16 @@ def run_backtest(
                 .last()
                 .drop("available_date")
             )
-            cs = cs.join(pit_fund, on="ticker", how="left")
+            if not pit_fund.is_empty():
+                cs = cs.join(pit_fund, on="ticker", how="left")
+            else:
+                # No fundamentals available yet for this date — add null columns
+                # so signal code can reference them without crashing.
+                fund_cols = [c for c in pit_fund.schema if c != "ticker"]
+                cs = cs.with_columns([
+                    pl.lit(None).cast(pit_fund.schema[c]).alias(c)
+                    for c in fund_cols
+                ])
 
         # Compute signal scores.
         try:
