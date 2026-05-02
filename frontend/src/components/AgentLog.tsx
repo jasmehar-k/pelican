@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import {
 	AgentStreamEvent,
+	invalidateSignalsCache,
 	startAgentRun,
 	streamAgentRun,
 } from '../api/client'
@@ -99,6 +100,7 @@ export function AgentLog({
 				}
 				if (event.event === 'run_complete') {
 					setStatus('done')
+					invalidateSignalsCache()
 					// Close the EventSource so onerror doesn't fire when the
 					// server ends the connection and override our 'done' status.
 					closeRef.current?.()

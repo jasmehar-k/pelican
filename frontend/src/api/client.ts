@@ -179,8 +179,17 @@ async function requestJSON<T>(path: string, init?: RequestInit): Promise<T> {
 	return response.json() as Promise<T>
 }
 
-export async function listSignals(): Promise<SignalSummary[]> {
-	return requestJSON<SignalSummary[]>('/signals')
+let _signalsCache: SignalSummary[] | null = null
+
+export async function listSignals(bust = false): Promise<SignalSummary[]> {
+	if (!bust && _signalsCache) return _signalsCache
+	const result = await requestJSON<SignalSummary[]>('/signals')
+	_signalsCache = result
+	return result
+}
+
+export function invalidateSignalsCache(): void {
+	_signalsCache = null
 }
 
 export async function getSignal(name: string): Promise<SignalSummary> {
