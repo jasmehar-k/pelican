@@ -85,7 +85,7 @@ def _run_graph_thread(
             on_attempt_start=on_attempt_start,
             with_researcher=req.with_researcher,
         )
-        state = coerce_state({"theme": req.theme})
+        state = coerce_state({"theme": req.theme, "run_id": run_id})
         final_state: dict = dict(state)
 
         if req.with_researcher:

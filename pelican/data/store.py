@@ -120,7 +120,7 @@ class DataStore:
     def get_recent_research_log(self, limit: int = 50) -> pl.DataFrame:
         return self.query(
             """
-            SELECT run_id, ts, theme, arxiv_ids, signal_hypothesis,
+            SELECT run_id, ts, theme, arxiv_ids, papers, signal_hypothesis,
                    generated_code, decision, ic_tstat, sharpe_net,
                    feedback, retry_count
             FROM research_log
@@ -133,7 +133,7 @@ class DataStore:
     def get_research_log_entry(self, run_id: str) -> pl.DataFrame:
         return self.query(
             """
-            SELECT run_id, ts, theme, arxiv_ids, signal_hypothesis,
+            SELECT run_id, ts, theme, arxiv_ids, papers, signal_hypothesis,
                    generated_code, decision, ic_tstat, sharpe_net,
                    feedback, retry_count
             FROM research_log
