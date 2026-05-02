@@ -106,14 +106,21 @@ def compute_fundamental_ratios(
     Adds: market_cap, pe_ratio, pb_ratio, roe, debt_to_equity, available_date.
     Undefined ratios (zero/negative equity, zero shares) → null.
     """
-    # Get the closing price on (or nearest before) each period_end date per ticker.
-    # We join on exact date; missing dates stay null and ratios will be null.
+    # Get the closing price on the nearest prior trading day for each period_end.
+    # join_asof strategy="backward" handles quarter-ends that fall on weekends/holidays.
     price_snap = (
         prices_df.select(["ticker", "date", "close"])
+        .sort(["ticker", "date"])
         .rename({"date": "period_end", "close": "close_at_period_end"})
     )
 
-    df = fund_df.join(price_snap, on=["ticker", "period_end"], how="left")
+    fund_sorted = fund_df.sort(["ticker", "period_end"])
+    df = fund_sorted.join_asof(
+        price_snap,
+        on="period_end",
+        by="ticker",
+        strategy="backward",
+    )
 
     df = df.with_columns([
         # market_cap = shares * price

@@ -28,7 +28,7 @@ class Settings(BaseSettings):
 
     # Backtest defaults
     backtest_start: date = date(2014, 1, 1)
-    backtest_end: date = date(2024, 1, 1)
+    backtest_end: date = Field(default_factory=lambda: date.today())
 
     # arXiv rate limit
     arxiv_rate_limit_seconds: float = 3.0
