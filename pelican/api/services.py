@@ -99,8 +99,23 @@ def signal_summary_payload(settings: Any, store: Any, signal_name: str, start: d
 def build_tearsheet(settings: Any, store: Any, signal_name: str, start: date | None = None, end: date | None = None) -> dict[str, Any]:
     cfg = _backtest_config(settings, start, end)
     result = run_backtest(signal_name, cfg, store)
+    # Build summary inline from the result we already have — avoids a second backtest run.
+    spec_payload = signal_spec_payload(signal_name)
+    spec_payload["stats"] = {
+        "ic_mean": result.ic_mean,
+        "icir": result.icir,
+        "ic_tstat": result.ic_tstat,
+        "sharpe_gross": result.sharpe_gross,
+        "sharpe_net": result.sharpe_net,
+        "max_drawdown_gross": result.max_drawdown_gross,
+        "max_drawdown_net": result.max_drawdown_net,
+        "avg_turnover": result.avg_turnover,
+        "n_periods": result.n_periods,
+        "avg_universe_size": result.avg_universe_size,
+    }
+    spec_payload["error"] = None
     return {
-        "summary": signal_summary_payload(settings, store, signal_name, cfg.start, cfg.end),
+        "summary": spec_payload,
         "config": {
             "start": cfg.start,
             "end": cfg.end,
@@ -203,6 +218,13 @@ def optimize_portfolio(settings: Any, store: Any, request: Any) -> dict[str, Any
     if built is None:
         raise ValueError(f"No cross-section available for {rebal_date}")
     cs, _ = built
+
+    # Validate all signal names exist before doing any compute.
+    for name in signal_names:
+        try:
+            get_signal(name)
+        except KeyError:
+            raise ValueError(f"unknown signal: {name!r}")
 
     signal_scores: dict[str, pl.Series] = {}
     ic_weights: dict[str, float] = {}

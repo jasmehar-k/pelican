@@ -74,18 +74,20 @@ def _run_graph_thread(
         _put({"event": "node_start", "node": "coder",
               "data": {"attempt": n}, "timestamp": _ts()})
 
-    config = BacktestConfig(start=req.start, end=req.end)
-    graph = build_graph(
-        store, config,
-        model=req.model,
-        on_token=on_token,
-        on_attempt_start=on_attempt_start,
-        with_researcher=req.with_researcher,
-    )
-    state = coerce_state({"theme": req.theme})
-    final_state: dict = dict(state)
-
+    # Wrap the entire body so the None sentinel is always sent even if
+    # build_graph / coerce_state raise before the inner try block.
     try:
+        config = BacktestConfig(start=req.start, end=req.end)
+        graph = build_graph(
+            store, config,
+            model=req.model,
+            on_token=on_token,
+            on_attempt_start=on_attempt_start,
+            with_researcher=req.with_researcher,
+        )
+        state = coerce_state({"theme": req.theme})
+        final_state: dict = dict(state)
+
         if req.with_researcher:
             _put({"event": "node_start", "node": "researcher",
                   "data": {}, "timestamp": _ts()})
@@ -109,7 +111,7 @@ def _run_graph_thread(
         _put({"event": "run_error", "node": None,
               "data": {"error": str(exc)}, "timestamp": _ts()})
     finally:
-        _put(None)  # end-of-stream sentinel
+        _put(None)  # end-of-stream sentinel — always fires
 
 
 async def _sse_generator(run_id: str, queue: asyncio.Queue):
@@ -139,7 +141,7 @@ async def start_run(req: AgentRunRequest, request: Request) -> dict:
     store = request.app.state.store
     loop = asyncio.get_running_loop()
 
-    asyncio.get_event_loop().run_in_executor(
+    loop.run_in_executor(
         None,
         _run_graph_thread,
         run_id, req, store, queue, loop,

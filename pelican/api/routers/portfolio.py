@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 
 from pelican.api.models import PortfolioOptimizeRequest, PortfolioOptimizeResponse
 from pelican.api.services import optimize_portfolio
@@ -15,4 +15,7 @@ async def optimize_route(request: Request, payload: PortfolioOptimizeRequest) ->
     """Optimize a long/short portfolio for the selected signals."""
     settings = request.app.state.settings
     store = request.app.state.store
-    return PortfolioOptimizeResponse.model_validate(optimize_portfolio(settings, store, payload))
+    try:
+        return PortfolioOptimizeResponse.model_validate(optimize_portfolio(settings, store, payload))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
