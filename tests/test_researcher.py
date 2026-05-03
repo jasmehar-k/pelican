@@ -211,10 +211,12 @@ class TestResearcherNode:
         ]
         mock_llm = MagicMock()
         mock_llm.invoke.return_value = self._mock_llm_response(
-            "HYPOTHESIS: Use delayed momentum after earnings announcements.\n"
-            "DATA_FIELDS: close, close_21d, close_252d\n"
-            "SIGNAL_NAME: post_earnings_momentum\n"
-            "NEED_MORE_DETAIL: false\n"
+            "HYPOTHESIS_1: Stocks with delayed price responses to earnings announcements tend to "
+            "continue drifting in the direction of the surprise for several months. This post-earnings "
+            "drift reflects investor underreaction to fundamental news. Use 12-month return skipping "
+            "the most recent month: close_21d / close_252d - 1.\n"
+            "DATA_FIELDS_1: close_21d, close_252d\n"
+            "SIGNAL_NAME_1: post_earnings_momentum\n"
         )
 
         with (

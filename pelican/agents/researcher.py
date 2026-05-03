@@ -7,7 +7,6 @@ import uuid
 from pathlib import Path
 
 from pelican.agents.state import AgentState
-from pelican.agents.tools.pdf_extract import fetch_pdf_text
 from pelican.agents.tools.search import SearchResult, search_arxiv
 from pelican.agents.tools.vector_store import find_similar, has_paper, retrieve_for_theme, store_paper
 from pelican.utils.config import get_settings
@@ -169,117 +168,22 @@ def get_hypotheses(
     return papers, hypotheses
 
 
-def _parse_bool(text: str, key: str) -> bool:
-    value = _parse_flag(text, key)
-    if value is None:
-        return False
-    return value.lower() in {"1", "true", "yes", "y"}
-
-
-def _parse_response(text: str) -> dict[str, object]:
-    hypothesis = _parse_flag(text, "HYPOTHESIS")
-    data_fields = _parse_flag(text, "DATA_FIELDS") or ""
-    signal_name = _parse_flag(text, "SIGNAL_NAME")
-    return {
-        "hypothesis": hypothesis,
-        "data_fields": [field.strip() for field in data_fields.split(",") if field.strip()],
-        "signal_name": signal_name,
-        "need_more_detail": _parse_bool(text, "NEED_MORE_DETAIL"),
-    }
-
-
-def _build_user_message(theme: str, papers: list[SearchResult], pdf_text: str | None = None) -> str:
-    parts = [
-        f"Research theme: {theme}",
-        "",
-        "Paper summaries:",
-        _format_papers(papers) if papers else "No papers were found.",
-        "",
-        "Return exactly these fields:",
-        "HYPOTHESIS: 2-3 sentences with the economic rationale and relevant data fields",
-        "DATA_FIELDS: comma-separated exact column names",
-        "SIGNAL_NAME: short snake_case name",
-        "NEED_MORE_DETAIL: true or false",
-    ]
-    if pdf_text:
-        parts.extend([
-            "",
-            "Additional PDF text for the top paper:",
-            pdf_text,
-        ])
-    return "\n".join(parts)
-
 
 def _make_researcher_node(model: str | None = None):
     def researcher_node(state: AgentState) -> AgentState:
         theme = state["theme"]
         run_id = state.get("run_id") or str(uuid.uuid4())
+
         try:
-            papers = search_arxiv(theme, max_results=10)
+            papers, hypotheses = get_hypotheses(theme, n=3, model=model)
         except Exception as exc:
-            log.warning("researcher: arXiv search failed, proceeding without papers", error=str(exc))
-            papers = []
+            log.warning("researcher: get_hypotheses failed", error=str(exc), theme=theme)
+            papers, hypotheses = [], []
 
-        fresh = [paper for paper in papers if not find_similar(paper["abstract"], threshold=0.92)]
-        context = (fresh or papers)[:5]
+        arxiv_ids: list[str] = [p["arxiv_id"] for p in papers[:5]]
+        # Pick the first well-formed hypothesis as the signal description for the coder.
+        signal_hypothesis: str | None = hypotheses[0]["hypothesis"] if hypotheses else None
 
-        if len(context) < 3:
-            stored = retrieve_for_theme(theme, n_results=5)
-            stored_ids = {p["arxiv_id"] for p in context}
-            for match in stored:
-                if match["arxiv_id"] not in stored_ids and len(context) < 5:
-                    m = match["metadata"]
-                    context.append({
-                        "title": m.get("title", ""),
-                        "authors": [a.strip() for a in m.get("authors", "").split(",") if a.strip()],
-                        "abstract": match["abstract"],
-                        "arxiv_id": match["arxiv_id"],
-                        "url": m.get("url", f"https://arxiv.org/abs/{match['arxiv_id']}"),
-                    })
-                    stored_ids.add(match["arxiv_id"])
-
-        signal_hypothesis: str | None = None
-        arxiv_ids: list[str] = [paper["arxiv_id"] for paper in context]
-
-        if not context:
-            return {
-                **state,
-                "papers": papers,
-                "signal_hypothesis": None,
-                "arxiv_ids": [],
-                "run_id": run_id,
-            }
-
-        llm = _get_llm(model=model)
-        system_prompt = _load_system_prompt()
-
-        response = llm.invoke([
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": _build_user_message(theme, context)},
-        ])
-        parsed = _parse_response(response.content)
-
-        if parsed["need_more_detail"] and context and len(context[0]["abstract"]) < 300:
-            pdf_text = fetch_pdf_text(context[0]["arxiv_id"], max_pages=5)
-            if pdf_text:
-                response = llm.invoke([
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": _build_user_message(theme, context, pdf_text)},
-                ])
-                parsed = _parse_response(response.content)
-
-        signal_hypothesis = parsed["hypothesis"] if parsed["hypothesis"] else None
-
-        for paper in context:
-            if not has_paper(paper["arxiv_id"]):
-                store_paper(
-                    paper["arxiv_id"],
-                    paper["title"],
-                    paper["abstract"],
-                    {"url": paper["url"], "authors": paper["authors"]},
-                )
-
-        log.info("research completed", theme=theme, papers=len(papers), context=len(context))
         return {
             **state,
             "papers": papers,
