@@ -32,6 +32,7 @@ def signal_spec_payload(signal_name: str) -> dict[str, Any]:
         "expected_ic_range": list(spec.expected_ic_range),
         "data_frequency": spec.data_frequency,
         "min_score_coverage": spec.min_score_coverage,
+        "source": spec.source,
     }
 
 

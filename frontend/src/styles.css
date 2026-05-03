@@ -372,6 +372,13 @@ tbody tr:hover {
   background: rgba(245, 158, 11, 0.12);
 }
 
+.chip-agent {
+  color: #c4b5fd;
+  border-color: rgba(139, 92, 246, 0.35);
+  background: rgba(139, 92, 246, 0.12);
+  font-size: 0.72rem;
+}
+
 .inline-alert {
   border-radius: 14px;
   padding: 12px 14px;

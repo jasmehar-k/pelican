@@ -39,6 +39,8 @@ class SignalSpec:
     # instead of BacktestConfig.min_score_coverage.  Useful for alternative-data
     # signals that are only partially seeded (e.g. EDGAR_SENTIMENT).
     min_score_coverage: float | None = None
+    # "library" for hand-coded factors; "agent" for signals discovered by the pipeline.
+    source: str = "library"
 
 
 # A signal function receives the cross-section panel (all tickers, all history
@@ -101,6 +103,7 @@ def register_dynamic(
         data_deps=(),
         expected_ic_range=(-0.10, 0.10),
         data_frequency="monthly",
+        source="agent",
     )
     _REGISTRY[name] = SignalDef(spec=spec, fn=fn)
     return True

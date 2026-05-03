@@ -72,6 +72,7 @@ export type SignalSummary = {
 	expected_ic_range: [number, number]
 	data_frequency: string
 	min_score_coverage: number | null
+	source: string
 	stats: SignalBacktestStats | null
 	error: string | null
 }

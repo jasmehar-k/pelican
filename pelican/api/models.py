@@ -89,6 +89,7 @@ class SignalSummary(BaseModel):
     expected_ic_range: tuple[float, float]
     data_frequency: str
     min_score_coverage: float | None = None
+    source: str = "library"
     stats: SignalBacktestStats | None = None
     error: str | None = None
 

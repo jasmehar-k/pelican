@@ -126,7 +126,10 @@ export function SignalBrowser({
 							<tr key={signal.name} onClick={() => onSignalSelect?.(signal)}>
 								<td>
 									<div className="signal-name-cell">
-										<strong>{signal.name}</strong>
+										<span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+											<strong>{signal.name}</strong>
+											{signal.source === 'agent' && <span className="chip chip-agent">Agent</span>}
+										</span>
 										<span>{signal.description}</span>
 									</div>
 								</td>
