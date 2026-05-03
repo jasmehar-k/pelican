@@ -244,8 +244,33 @@ export async function listResearchLog(): Promise<AgentRunLineage[]> {
 	return requestJSON<AgentRunLineage[]>('/agents/research-log')
 }
 
+export type PortfolioBacktestRow = {
+	date: string
+	portfolio_return: number
+	cumulative_return: number
+}
+
+export type PortfolioBacktestResponse = {
+	signals: string[]
+	start: string
+	end: string
+	n_periods: number
+	sharpe_net: number | null
+	max_drawdown: number | null
+	total_return: number | null
+	ic_weights: Record<string, number>
+	equity_curve: PortfolioBacktestRow[]
+}
+
 export async function optimizePortfolio(payload: PortfolioOptimizeRequest): Promise<PortfolioOptimizeResponse> {
 	return requestJSON<PortfolioOptimizeResponse>('/portfolio/optimize', {
+		method: 'POST',
+		body: JSON.stringify(payload),
+	})
+}
+
+export async function portfolioBacktest(payload: PortfolioOptimizeRequest): Promise<PortfolioBacktestResponse> {
+	return requestJSON<PortfolioBacktestResponse>('/portfolio/backtest', {
 		method: 'POST',
 		body: JSON.stringify(payload),
 	})

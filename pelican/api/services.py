@@ -329,3 +329,91 @@ def optimize_portfolio(settings: Any, store: Any, request: Any) -> dict[str, Any
 
 def signal_names() -> list[str]:
     return list_signals()
+
+
+def run_portfolio_backtest(settings: Any, store: Any, request: Any) -> dict[str, Any]:
+    """Walk-forward IC-weighted portfolio backtest over the requested date range.
+
+    For each signal, runs a full backtest to get per-period L/S net returns and
+    IC mean.  Combines signals by IC weight and returns the resulting equity curve
+    with summary statistics.
+    """
+    import math as _math
+
+    from pelican.backtest.metrics import compute_max_drawdown, compute_sharpe
+
+    signal_names_list = list(request.signals)
+    if not signal_names_list:
+        raise ValueError("signals must be non-empty")
+
+    cfg = _backtest_config(
+        settings,
+        getattr(request, "start", None),
+        getattr(request, "end", None),
+        cost_bps=getattr(request, "cost_bps", 2.0),
+        impact_bps=getattr(request, "impact_bps", 5.0),
+    )
+
+    # Run each signal's backtest.
+    results: dict[str, Any] = {}
+    for name in signal_names_list:
+        try:
+            results[name] = run_backtest(name, cfg, store)
+        except Exception:
+            pass  # skip signals with no data
+
+    if not results:
+        raise ValueError("No backtest data available for the selected signals and date range")
+
+    # IC weights: positive IC only; equal-weight fallback.
+    ic_raw = {
+        name: max(0.0, r.ic_mean)
+        for name, r in results.items()
+        if not _math.isnan(r.ic_mean)
+    }
+    total_ic = sum(ic_raw.values())
+    if total_ic > 0:
+        ic_weights: dict[str, float] = {n: w / total_ic for n, w in ic_raw.items()}
+    else:
+        ic_weights = {n: 1.0 / len(results) for n in results}
+
+    # Aggregate per-period returns across signals (union of dates, IC-weighted).
+    returns_by_date: dict[Any, list[tuple[str, float]]] = {}
+    for name, r in results.items():
+        for row in r.period_returns.to_dicts():
+            d = row["date"]
+            ls = row.get("ls_net") if row.get("ls_net") is not None else row.get("ls_gross")
+            if ls is not None:
+                returns_by_date.setdefault(d, []).append((name, float(ls)))
+
+    equity_curve = []
+    equity = 1.0
+    net_returns: list[float] = []
+
+    for d in sorted(returns_by_date):
+        period_entries = returns_by_date[d]
+        period_return = sum(ic_weights.get(name, 0.0) * ret for name, ret in period_entries)
+        equity *= 1.0 + period_return
+        net_returns.append(period_return)
+        equity_curve.append({
+            "date": d,
+            "portfolio_return": period_return,
+            "cumulative_return": equity - 1.0,
+        })
+
+    series = pl.Series(net_returns) if net_returns else pl.Series([], dtype=pl.Float64)
+    sharpe = float(compute_sharpe(series)) if net_returns else None
+    drawdown = float(compute_max_drawdown(series)) if net_returns else None
+    total_return = equity - 1.0 if equity_curve else None
+
+    return {
+        "signals": signal_names_list,
+        "start": cfg.start,
+        "end": cfg.end,
+        "n_periods": len(equity_curve),
+        "sharpe_net": sharpe,
+        "max_drawdown": drawdown,
+        "total_return": total_return,
+        "ic_weights": ic_weights,
+        "equity_curve": equity_curve,
+    }

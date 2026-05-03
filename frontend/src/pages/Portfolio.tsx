@@ -12,46 +12,20 @@ import {
 	YAxis,
 } from 'recharts'
 
-import type { PortfolioOptimizeResponse, SignalSummary, SignalTearsheet } from '../api/client'
-import { getTearsheet, listSignals, optimizePortfolio } from '../api/client'
-
-type BasketPoint = {
-	date: string
-	equity: number
-}
-
-function cumulative(values: number[]): BasketPoint[] {
-	let equity = 1
-	return values.map((value, index) => {
-		equity *= 1 + value
-		return { date: String(index), equity: equity - 1 }
-	})
-}
-
-function buildBasketCurve(tearsheets: SignalTearsheet[]): BasketPoint[] {
-	const byDate = new Map<string, number[]>()
-	tearsheets.forEach((sheet) => {
-		sheet.period_returns.forEach((row) => {
-			const current = byDate.get(row.date) ?? []
-			current.push(row.ls_net ?? row.ls_gross ?? 0)
-			byDate.set(row.date, current)
-		})
-	})
-	const dates = Array.from(byDate.keys()).sort()
-	const returns = dates.map((date) => {
-		const values = byDate.get(date) ?? []
-		return values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : 0
-	})
-	const curve = cumulative(returns)
-	return dates.map((date, index) => ({ date, equity: curve[index]?.equity ?? 0 }))
-}
+import type {
+	PortfolioBacktestResponse,
+	PortfolioOptimizeResponse,
+	SignalSummary,
+} from '../api/client'
+import { listSignals, optimizePortfolio, portfolioBacktest } from '../api/client'
 
 export default function PortfolioPage() {
 	const [signals, setSignals] = useState<SignalSummary[]>([])
 	const [selectedSignals, setSelectedSignals] = useState<string[]>([])
 	const [result, setResult] = useState<PortfolioOptimizeResponse | null>(null)
-	const [basket, setBasket] = useState<BasketPoint[]>([])
-	const [busy, setBusy] = useState(false)
+	const [backtest, setBacktest] = useState<PortfolioBacktestResponse | null>(null)
+	const [busyOptimize, setBusyOptimize] = useState(false)
+	const [busyBacktest, setBusyBacktest] = useState(false)
 
 	useEffect(() => {
 		void listSignals().then((rows) => {
@@ -61,24 +35,11 @@ export default function PortfolioPage() {
 		})
 	}, [])
 
-	useEffect(() => {
-		const active = signals.filter((signal) => selectedSignals.includes(signal.name))
-		if (active.length === 0) {
-			setBasket([])
-			return
-		}
-		void Promise.all(active.map((signal) => getTearsheet(signal.name)))
-			.then((sheets) => setBasket(buildBasketCurve(sheets)))
-			.catch(() => setBasket([]))
-	}, [selectedSignals, signals])
-
 	const topChoices = useMemo(() => signals.slice(0, 8), [signals])
 
 	async function optimizeCurrentPortfolio() {
-		if (selectedSignals.length === 0) {
-			return
-		}
-		setBusy(true)
+		if (selectedSignals.length === 0) return
+		setBusyOptimize(true)
 		try {
 			const response = await optimizePortfolio({
 				signals: selectedSignals,
@@ -87,12 +48,28 @@ export default function PortfolioPage() {
 			})
 			setResult(response)
 		} finally {
-			setBusy(false)
+			setBusyOptimize(false)
+		}
+	}
+
+	async function runBacktest() {
+		if (selectedSignals.length === 0) return
+		setBusyBacktest(true)
+		try {
+			const response = await portfolioBacktest({
+				signals: selectedSignals,
+				objective: 'max_sharpe',
+				method: 'ic_weighted',
+			})
+			setBacktest(response)
+		} finally {
+			setBusyBacktest(false)
 		}
 	}
 
 	const weights = result?.positions ?? []
 	const risk = result?.risk_decomposition ?? null
+	const equityCurve = backtest?.equity_curve ?? []
 
 	return (
 		<main className="page-grid page-grid-portfolio">
@@ -101,11 +78,16 @@ export default function PortfolioPage() {
 					<div>
 						<div className="eyebrow">Portfolio</div>
 						<h2>Portfolio construction</h2>
-						<p>Select signals, optimize weights, and inspect the risk footprint.</p>
+						<p>Select signals, run a walk-forward backtest, and optimize current weights.</p>
 					</div>
-					<button className="primary-button" type="button" onClick={optimizeCurrentPortfolio} disabled={busy || selectedSignals.length === 0}>
-						{busy ? 'Optimizing…' : 'Optimize portfolio'}
-					</button>
+					<div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+						<button className="secondary-button" type="button" onClick={runBacktest} disabled={busyBacktest || selectedSignals.length === 0}>
+							{busyBacktest ? 'Backtesting…' : 'Run backtest'}
+						</button>
+						<button className="primary-button" type="button" onClick={optimizeCurrentPortfolio} disabled={busyOptimize || selectedSignals.length === 0}>
+							{busyOptimize ? 'Optimizing…' : 'Optimize portfolio'}
+						</button>
+					</div>
 				</div>
 
 				<div className="choice-grid">
@@ -122,6 +104,7 @@ export default function PortfolioPage() {
 											? current.filter((item) => item !== signal.name)
 											: [...current, signal.name]
 									))
+									setBacktest(null)
 								}}
 							>
 								<strong>{signal.name}</strong>
@@ -134,20 +117,40 @@ export default function PortfolioPage() {
 				<div className="chart-card">
 					<div className="chart-header">
 						<div>
-							<h3>Composite basket performance</h3>
-							<p>Proxy cumulative return from the selected signal basket.</p>
+							<h3>IC-weighted portfolio backtest</h3>
+							<p>Walk-forward net returns, weighted by each signal's historical IC.</p>
 						</div>
+						{backtest && (
+							<div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+								{backtest.sharpe_net !== null && (
+									<span className="chip chip-success">Sharpe {backtest.sharpe_net.toFixed(2)}</span>
+								)}
+								{backtest.max_drawdown !== null && (
+									<span className="chip chip-danger">MDD {(backtest.max_drawdown * 100).toFixed(1)}%</span>
+								)}
+								{backtest.total_return !== null && (
+									<span className="chip">Total {(backtest.total_return * 100).toFixed(1)}%</span>
+								)}
+								<span className="chip">{backtest.n_periods} periods</span>
+							</div>
+						)}
 					</div>
 					<div className="chart-wrap">
-						<ResponsiveContainer width="100%" height={300}>
-							<LineChart data={basket} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
-								<CartesianGrid stroke="rgba(148, 163, 184, 0.18)" vertical={false} />
-								<XAxis dataKey="date" tickFormatter={(value) => String(value).slice(0, 10)} />
-								<YAxis tickFormatter={(value) => `${(Number(value) * 100).toFixed(0)}%`} />
-								<Tooltip formatter={(value: number) => [`${(value * 100).toFixed(1)}%`, 'Equity']} />
-								<Line type="monotone" dataKey="equity" stroke="#22c55e" strokeWidth={3} dot={false} />
-							</LineChart>
-						</ResponsiveContainer>
+						{equityCurve.length > 0 ? (
+							<ResponsiveContainer width="100%" height={300}>
+								<LineChart data={equityCurve} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+									<CartesianGrid stroke="rgba(148, 163, 184, 0.18)" vertical={false} />
+									<XAxis dataKey="date" tickFormatter={(value) => String(value).slice(0, 10)} />
+									<YAxis tickFormatter={(value) => `${(Number(value) * 100).toFixed(0)}%`} />
+									<Tooltip formatter={(value: number) => [`${(value * 100).toFixed(1)}%`, 'Cumulative return']} />
+									<Line type="monotone" dataKey="cumulative_return" stroke="#22c55e" strokeWidth={3} dot={false} />
+								</LineChart>
+							</ResponsiveContainer>
+						) : (
+							<div className="empty-state">
+								<p className="muted-text">Click "Run backtest" to compute the IC-weighted portfolio equity curve.</p>
+							</div>
+						)}
 					</div>
 				</div>
 			</section>
@@ -161,15 +164,21 @@ export default function PortfolioPage() {
 						</div>
 					</div>
 					<div className="chart-wrap">
-						<ResponsiveContainer width="100%" height={300}>
-							<BarChart data={weights} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
-								<CartesianGrid stroke="rgba(148, 163, 184, 0.18)" vertical={false} />
-								<XAxis dataKey="ticker" />
-								<YAxis />
-								<Tooltip formatter={(value: number) => [value.toFixed(3), 'Weight']} />
-								<Bar dataKey="weight" fill="#38bdf8" radius={[6, 6, 0, 0]} />
-							</BarChart>
-						</ResponsiveContainer>
+						{weights.length > 0 ? (
+							<ResponsiveContainer width="100%" height={300}>
+								<BarChart data={weights} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+									<CartesianGrid stroke="rgba(148, 163, 184, 0.18)" vertical={false} />
+									<XAxis dataKey="ticker" />
+									<YAxis />
+									<Tooltip formatter={(value: number) => [value.toFixed(3), 'Weight']} />
+									<Bar dataKey="weight" fill="#38bdf8" radius={[6, 6, 0, 0]} />
+								</BarChart>
+							</ResponsiveContainer>
+						) : (
+							<div className="empty-state">
+								<p className="muted-text">Run the optimizer to see position weights.</p>
+							</div>
+						)}
 					</div>
 				</div>
 

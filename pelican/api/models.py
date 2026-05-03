@@ -178,3 +178,21 @@ class PortfolioOptimizeResponse(BaseModel):
     risk_decomposition: RiskDecompositionSummary | None = None
     ic_weights: dict[str, float] = Field(default_factory=dict)
     alpha_coverage: int = 0
+
+
+class PortfolioBacktestRow(BaseModel):
+    date: date
+    portfolio_return: float
+    cumulative_return: float
+
+
+class PortfolioBacktestResponse(BaseModel):
+    signals: list[str]
+    start: date
+    end: date
+    n_periods: int
+    sharpe_net: float | None
+    max_drawdown: float | None
+    total_return: float | None
+    ic_weights: dict[str, float] = Field(default_factory=dict)
+    equity_curve: list[PortfolioBacktestRow] = Field(default_factory=list)
