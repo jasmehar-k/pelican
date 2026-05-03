@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { AgentLog } from '../components/AgentLog'
@@ -42,6 +42,18 @@ export default function DashboardPage() {
 			})
 	}, [])
 
+	const refreshStats = useCallback(() => {
+		void Promise.all([listAgentRuns(), listResearchLog()])
+			.then(([runRows, researchRows]) => {
+				setRuns(runRows)
+				setResearch(researchRows)
+				if (researchRows.length > 0) {
+					setSelectedRun(researchRows[0].run_id)
+				}
+			})
+			.catch(() => {})
+	}, [])
+
 	const topSignals = useMemo(
 		() => [...signals].sort((left, right) => (right.stats?.ic_tstat ?? -999) - (left.stats?.ic_tstat ?? -999)).slice(0, 4),
 		[signals],
@@ -60,13 +72,13 @@ export default function DashboardPage() {
 				</div>
 				<div className="hero-actions">
 					<Link className="secondary-button" to="/signals">Browse signals</Link>
-					<Link className="secondary-button" to="/research">Open research log</Link>
+					<Link className="secondary-button" to="/research">Research log</Link>
 				</div>
 			</section>
 
 			<section className="metric-grid">
 				<MetricCard label="Signals" value={String(signals.length)} detail="Registered and scored factors" />
-				<MetricCard label="Recent runs" value={String(runs.length)} detail="Latest agent jobs from DuckDB" />
+				<MetricCard label="Agent runs" value={String(runs.length)} detail="Runs logged to research DB" />
 				<MetricCard
 					label="Best IC t-stat"
 					value={topSignals[0]?.stats?.ic_tstat?.toFixed(2) ?? 'n/a'}
@@ -76,29 +88,38 @@ export default function DashboardPage() {
 			</section>
 
 			<section className="content-grid">
-				<AgentLog defaultTheme="earnings quality factors" compact />
+				<AgentLog defaultTheme="earnings quality factors" compact onRunComplete={refreshStats} />
 
 				<section className="panel">
 					<div className="panel-header">
 						<div>
 							<div className="eyebrow">Top signals</div>
-							<h2>Best current candidates</h2>
+							<h2>Best by IC t-stat</h2>
 						</div>
+						<Link className="secondary-button" to="/signals">All signals</Link>
 					</div>
-					<div className="stack-list">
-						{topSignals.map((signal) => (
-							<Link key={signal.name} to={`/signals/${signal.name}`} className="stack-item stack-item-link">
-								<div>
-									<strong>{signal.name}</strong>
-									<span>{signal.description}</span>
-								</div>
-								<div className="stack-item-metrics">
-									<span className="pill">IC {signal.stats?.ic_mean?.toFixed(3) ?? 'n/a'}</span>
-									<span className="pill">Sharpe {signal.stats?.sharpe_net?.toFixed(2) ?? 'n/a'}</span>
-								</div>
-							</Link>
-						))}
-					</div>
+					{topSignals.length > 0 ? (
+						<div className="stack-list">
+							{topSignals.map((signal) => (
+								<Link key={signal.name} to={`/signals/${signal.name}`} className="stack-item stack-item-link">
+									<div>
+										<strong>{signal.name}</strong>
+										<span>{signal.description}</span>
+									</div>
+									<div className="stack-item-metrics">
+										<span className="pill">IC {signal.stats?.ic_mean?.toFixed(3) ?? 'n/a'}</span>
+										<span className="pill">t={signal.stats?.ic_tstat?.toFixed(2) ?? 'n/a'}</span>
+										<span className="pill">Sharpe {signal.stats?.sharpe_net?.toFixed(2) ?? 'n/a'}</span>
+									</div>
+								</Link>
+							))}
+						</div>
+					) : (
+						<div className="empty-state">
+							<p>No signals scored yet.</p>
+							<p className="muted-text">Run a backtest from the Signals page to populate this.</p>
+						</div>
+					)}
 				</section>
 			</section>
 
@@ -106,61 +127,80 @@ export default function DashboardPage() {
 				<div className="panel-header">
 					<div>
 						<div className="eyebrow">Research log</div>
-						<h2>Lineage preview</h2>
+						<h2>Recent runs</h2>
 					</div>
 					<Link className="secondary-button" to="/research">View all</Link>
 				</div>
-				<div className="table-shell">
-					<table>
-						<thead>
-							<tr>
-								<th>Run</th>
-								<th>Theme</th>
-								<th>Hypothesis</th>
-								<th>Result</th>
-							</tr>
-						</thead>
-						<tbody>
-							{research.slice(0, 5).map((item) => (
-								<tr key={item.run_id} onClick={() => setSelectedRun(item.run_id)}>
-									<td>{item.run_id.slice(0, 8)}</td>
-									<td>{item.theme}</td>
-									<td>{shortSnippet(item.signal_hypothesis)}</td>
-									<td>
-										<span className="chip">{item.decision ?? 'pending'}</span>
-									</td>
-								</tr>
-							))}
-						</tbody>
-					</table>
-				</div>
 
-				{selectedResearch ? (
-					<div className="detail-card">
-						<div className="detail-grid">
-							<div>
-								<div className="eyebrow">Selected run</div>
-								<h3>{selectedResearch.theme}</h3>
-								<p>{shortSnippet(selectedResearch.signal_hypothesis, 220)}</p>
-							</div>
-							<div>
-								<div className="eyebrow">Papers</div>
-								<div className="paper-list">
-									{selectedResearch.papers.length > 0 ? (
-										selectedResearch.papers.slice(0, 3).map((paper) => (
-											<div key={paper.arxiv_id ?? paper.title} className="paper-card">
-												<strong>{paper.title ?? paper.arxiv_id ?? 'Untitled paper'}</strong>
-												<span>{paper.authors.join(', ') || 'Unknown authors'}</span>
-											</div>
-										))
-									) : (
-										<div className="muted-text">No stored papers for this run yet.</div>
-									)}
+				{research.length > 0 ? (
+					<>
+						<div className="table-shell">
+							<table>
+								<thead>
+									<tr>
+										<th>Run</th>
+										<th>Theme</th>
+										<th>Hypothesis</th>
+										<th>Result</th>
+									</tr>
+								</thead>
+								<tbody>
+									{research.slice(0, 5).map((item) => (
+										<tr
+											key={item.run_id}
+											onClick={() => setSelectedRun(item.run_id)}
+											style={{ cursor: 'pointer' }}
+											className={selectedRun === item.run_id ? 'row-selected' : ''}
+										>
+											<td>{item.run_id.slice(0, 8)}</td>
+											<td>{item.theme}</td>
+											<td>{shortSnippet(item.signal_hypothesis)}</td>
+											<td>
+												<span className={`chip ${item.decision === 'accept' ? 'chip-success' : item.decision === 'reject' ? 'chip-danger' : ''}`}>
+													{item.decision ?? 'pending'}
+												</span>
+											</td>
+										</tr>
+									))}
+								</tbody>
+							</table>
+						</div>
+
+						{selectedResearch ? (
+							<div className="detail-card" style={{ marginTop: '16px' }}>
+								<div className="detail-grid">
+									<div>
+										<div className="eyebrow">Selected run</div>
+										<h3 style={{ margin: '8px 0' }}>{selectedResearch.theme}</h3>
+										<p style={{ margin: 0 }}>{shortSnippet(selectedResearch.signal_hypothesis, 220)}</p>
+									</div>
+									<div>
+										<div className="eyebrow">Papers</div>
+										<div className="paper-list">
+											{selectedResearch.papers.length > 0 ? (
+												selectedResearch.papers.slice(0, 3).map((paper) => (
+													<div key={paper.arxiv_id ?? paper.title} className="paper-card">
+														<strong>{paper.title ?? paper.arxiv_id ?? 'Untitled paper'}</strong>
+														<span>{paper.authors.join(', ') || 'Unknown authors'}</span>
+													</div>
+												))
+											) : (
+												<div className="muted-text">No papers stored for this run.</div>
+											)}
+										</div>
+									</div>
 								</div>
 							</div>
-						</div>
+						) : null}
+					</>
+				) : (
+					<div className="empty-state">
+						<p>No research runs logged yet.</p>
+						<p className="muted-text">
+							Run the agent above — completed runs appear here automatically.
+						</p>
 					</div>
-				) : null}
+				)}
 			</section>
 		</main>
 	)

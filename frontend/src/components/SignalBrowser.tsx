@@ -71,9 +71,9 @@ export function SignalBrowser({
 		<section className="panel">
 			<div className="panel-header">
 				<div>
-					<div className="eyebrow">Signal browser</div>
-					<h2>All discovered signals</h2>
-					<p>Sort by IC, Sharpe, or turnover and open any row for the full tearsheet.</p>
+					<div className="eyebrow">Signals</div>
+					<h2>Factor library</h2>
+					<p>Sort by IC, Sharpe, or turnover. Click any row for the full tearsheet.</p>
 				</div>
 				<div className="toolbar-inline">
 					<input
@@ -90,7 +90,16 @@ export function SignalBrowser({
 				</div>
 			</div>
 
-			<div className="table-shell">
+			{rows.length === 0 && (
+				<div className="empty-state">
+					<p>{query || statusFilter !== 'all' ? 'No signals match your filters.' : 'No signals registered yet.'}</p>
+					{!query && statusFilter === 'all' && (
+						<p className="muted-text">Run a backtest via the API or use the agent to generate and evaluate signals.</p>
+					)}
+				</div>
+			)}
+
+			{rows.length > 0 && <div className="table-shell">
 				<table>
 					<thead>
 						<tr>
@@ -143,7 +152,7 @@ export function SignalBrowser({
 						))}
 					</tbody>
 				</table>
-			</div>
+			</div>}
 		</section>
 	)
 }

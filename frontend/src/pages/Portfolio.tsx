@@ -173,25 +173,13 @@ export default function PortfolioPage() {
 					</div>
 				</div>
 
-				<div className="chart-card">
-					<div className="chart-header">
-						<div>
-							<h3>Portfolio curve</h3>
-							<p>Proxy cumulative return from the selected signal basket.</p>
+				{!result && (
+					<div className="chart-card">
+						<div className="empty-state">
+							<p className="muted-text">Run the optimizer to see position weights.</p>
 						</div>
 					</div>
-					<div className="chart-wrap">
-						<ResponsiveContainer width="100%" height={300}>
-							<LineChart data={basket} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
-								<CartesianGrid stroke="rgba(148, 163, 184, 0.18)" vertical={false} />
-								<XAxis dataKey="date" tickFormatter={(value) => String(value).slice(0, 10)} />
-								<YAxis tickFormatter={(value) => `${(Number(value) * 100).toFixed(0)}%`} />
-								<Tooltip formatter={(value: number) => [`${(value * 100).toFixed(1)}%`, 'Equity']} />
-								<Line type="monotone" dataKey="equity" stroke="#22c55e" strokeWidth={3} dot={false} />
-							</LineChart>
-						</ResponsiveContainer>
-					</div>
-				</div>
+				)}
 			</section>
 
 			<section className="panel">

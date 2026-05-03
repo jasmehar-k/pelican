@@ -14,20 +14,14 @@ export default function SignalsPage() {
 		void listSignals().then(setSignals).catch(() => setSignals([]))
 	}, [])
 
+	function refreshSignals() {
+		void listSignals(true).then(setSignals).catch(() => {})
+	}
+
 	return (
 		<main className="page-grid page-grid-signals">
-			<section className="panel">
-				<div className="panel-header">
-					<div>
-						<div className="eyebrow">Signals</div>
-						<h2>Factor library</h2>
-						<p>Compare quality across signals, then open any factor tearsheet for the full backtest.</p>
-					</div>
-				</div>
-				<SignalBrowser signals={signals} onSignalSelect={(signal) => navigate(`/signals/${signal.name}`)} />
-			</section>
-
-			<AgentLog defaultTheme="earnings surprise sentiment" compact />
+			<SignalBrowser signals={signals} onSignalSelect={(signal) => navigate(`/signals/${signal.name}`)} />
+			<AgentLog defaultTheme="earnings surprise sentiment" compact onRunComplete={refreshSignals} />
 		</main>
 	)
 }
