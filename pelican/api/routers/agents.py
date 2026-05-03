@@ -27,15 +27,36 @@ def _ts() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+_ALL_SAFE_KEYS = {
+    "decision", "feedback", "ic_tstat", "sharpe_net",
+    "retry_count", "signal_hypothesis", "arxiv_ids", "theme",
+    "errors", "memo",
+}
+
+# Keys each node actually owns — prevents stale metrics from bleeding through.
+_NODE_KEYS: dict[str, set[str]] = {
+    "researcher": {"theme", "arxiv_ids", "signal_hypothesis"},
+    "coder":      {"theme", "retry_count", "errors"},
+    "critic":     {"theme", "decision", "feedback", "ic_tstat", "sharpe_net", "retry_count"},
+    "reporter":   {"theme", "decision", "memo"},
+}
+
+
 def _safe_state(state: dict) -> dict:
-    """Return a JSON-serialisable subset of a state dict."""
-    safe_keys = {
-        "decision", "feedback", "ic_tstat", "sharpe_net",
-        "retry_count", "signal_hypothesis", "arxiv_ids", "theme",
-        "errors", "memo",
-    }
+    """Return a JSON-serialisable subset of a state dict (used for terminal events)."""
     out: dict[str, Any] = {}
-    for k in safe_keys:
+    for k in _ALL_SAFE_KEYS:
+        v = state.get(k)
+        if isinstance(v, (str, int, float, bool, list, type(None))):
+            out[k] = v
+    return out
+
+
+def _node_state(state: dict, node_name: str) -> dict:
+    """Return only the keys the named node owns, for node_complete events."""
+    keys = _NODE_KEYS.get(node_name, _ALL_SAFE_KEYS)
+    out: dict[str, Any] = {}
+    for k in keys:
         v = state.get(k)
         if isinstance(v, (str, int, float, bool, list, type(None))):
             out[k] = v
@@ -96,7 +117,7 @@ def _run_graph_thread(
             for node_name, delta in node_event.items():
                 final_state.update(delta)
                 _put({"event": "node_complete", "node": node_name,
-                      "data": _safe_state(final_state), "timestamp": _ts()})
+                      "data": _node_state(final_state, node_name), "timestamp": _ts()})
 
         _RUN_RESULTS[run_id] = final_state
         try:
