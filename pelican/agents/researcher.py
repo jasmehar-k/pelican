@@ -57,25 +57,40 @@ def _parse_flag(text: str, key: str) -> str | None:
     return match.group(1).strip() if match else None
 
 
-def _build_multi_user_message(theme: str, papers: list[SearchResult], n: int) -> str:
+def _build_multi_user_message(
+    theme: str,
+    papers: list[SearchResult],
+    n: int,
+    existing_signals: list[str] | None = None,
+) -> str:
     numbered = "\n\n".join(
         f"HYPOTHESIS_{i}: <2-3 sentences: economic rationale + which columns to use>\n"
         f"DATA_FIELDS_{i}: comma-separated exact column names from the available list\n"
         f"SIGNAL_NAME_{i}: short_snake_case"
         for i in range(1, n + 1)
     )
-    return "\n".join([
+    parts = [
         f"Research theme: {theme}",
         "",
         "Paper summaries:",
         _format_papers(papers) if papers else "No papers were found.",
         "",
+    ]
+    if existing_signals:
+        parts += [
+            "Signals already in the registry — DO NOT reproduce these "
+            "(different formula, different columns, or different mechanism required):",
+            ", ".join(existing_signals),
+            "",
+        ]
+    parts += [
         f"Generate exactly {n} DISTINCT signal hypotheses grounded in these papers.",
         "Each must use a different economic mechanism or different data fields.",
         "Return this structure — one block per signal:",
         "",
         numbered,
-    ])
+    ]
+    return "\n".join(parts)
 
 
 def _parse_multi_response(text: str, n: int) -> list[dict]:
@@ -104,6 +119,7 @@ def get_hypotheses(
     theme: str,
     n: int = 3,
     model: str | None = None,
+    existing_signals: list[str] | None = None,
 ) -> tuple[list[SearchResult], list[dict]]:
     """Search arXiv once and return up to *n* distinct signal hypotheses.
 
@@ -145,7 +161,7 @@ def get_hypotheses(
     system_prompt = _load_system_prompt()
     response = llm.invoke([
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": _build_multi_user_message(theme, context, n)},
+        {"role": "user", "content": _build_multi_user_message(theme, context, n, existing_signals)},
     ])
     hypotheses = _parse_multi_response(response.content, n)
     if not hypotheses:
@@ -174,8 +190,11 @@ def _make_researcher_node(model: str | None = None):
         theme = state["theme"]
         run_id = state.get("run_id") or str(uuid.uuid4())
 
+        from pelican.backtest.signals import list_signals
+        existing = list_signals()
+
         try:
-            papers, hypotheses = get_hypotheses(theme, n=3, model=model)
+            papers, hypotheses = get_hypotheses(theme, n=3, model=model, existing_signals=existing)
         except Exception as exc:
             log.warning("researcher: get_hypotheses failed", error=str(exc), theme=theme)
             papers, hypotheses = [], []
