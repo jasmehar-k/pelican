@@ -110,6 +110,7 @@ def search_arxiv(query: str, max_results: int = 10) -> list[SearchResult]:
     }
 
     last_exc: Exception | None = None
+    is_rate_limited = False
     for attempt, backoff in enumerate((*_RETRY_DELAYS, None), start=1):
         try:
             response = httpx.get(ARXIV_API_URL, params=params, timeout=60)
@@ -131,14 +132,20 @@ def search_arxiv(query: str, max_results: int = 10) -> list[SearchResult]:
             if backoff is not None:
                 time.sleep(backoff)
         except httpx.HTTPStatusError as exc:
-            if exc.response.status_code == 429 and backoff is not None:
+            if exc.response.status_code == 429:
                 last_exc = exc
-                time.sleep(backoff)
+                is_rate_limited = True
+                if backoff is not None:
+                    time.sleep(backoff)
             else:
                 raise
         except Exception:
             raise
 
+    if is_rate_limited:
+        # arXiv rate-limited us through all retries — return empty so the
+        # researcher can fall back to previously stored papers or theme alone.
+        return []
     raise httpx.ReadTimeout(
         f"arXiv search timed out after {len(_RETRY_DELAYS) + 1} attempts"
     ) from last_exc

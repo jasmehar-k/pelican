@@ -214,7 +214,11 @@ def _make_researcher_node(model: str | None = None):
     def researcher_node(state: AgentState) -> AgentState:
         theme = state["theme"]
         run_id = state.get("run_id") or str(uuid.uuid4())
-        papers = search_arxiv(theme, max_results=10)
+        try:
+            papers = search_arxiv(theme, max_results=10)
+        except Exception as exc:
+            log.warning("researcher: arXiv search failed, proceeding without papers", error=str(exc))
+            papers = []
 
         fresh = [paper for paper in papers if not find_similar(paper["abstract"], threshold=0.92)]
         context = (fresh or papers)[:5]
