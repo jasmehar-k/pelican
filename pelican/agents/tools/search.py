@@ -17,7 +17,7 @@ import httpx
 from pelican.utils.config import get_settings
 
 ARXIV_API_URL = "https://export.arxiv.org/api/query"
-ARXIV_CATEGORIES = "cat:q-fin.PM OR cat:q-fin.ST OR cat:econ.GN OR cat:q-fin.TR"
+ARXIV_CATEGORIES = "cat:q-fin.PM OR cat:q-fin.ST OR cat:q-fin.TR OR cat:q-fin.GN OR cat:cs.LG"
 
 _last_req_time = 0.0
 
