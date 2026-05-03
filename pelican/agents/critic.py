@@ -27,7 +27,7 @@ from pelican.backtest.engine import BacktestConfig
 from pelican.backtest.signals import SignalSpec
 from pelican.utils.logging import get_logger
 
-IC_TSTAT_THRESHOLD = 0.5
+IC_TSTAT_THRESHOLD = 1.5
 SHARPE_THRESHOLD = 0.3
 
 log = get_logger(__name__)
