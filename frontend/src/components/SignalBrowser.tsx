@@ -147,9 +147,14 @@ export function SignalBrowser({
 									<span className="metric-value">{signal.stats?.avg_universe_size?.toFixed(0) ?? 'n/a'}</span>
 								</td>
 								<td>
-									<span className={`chip ${statusFor(signal) === 'accepted' ? 'chip-success' : statusFor(signal) === 'rejected' ? 'chip-danger' : ''}`}>
-										{statusFor(signal)}
-									</span>
+									{signal.stats && (signal.stats.avg_universe_size ?? 0) < 50
+										? <span className="chip chip-warn" title="Fewer than 50 tickers scored — statistics are unreliable">Sparse data</span>
+										: signal.error
+											? <span className="chip chip-danger">Error</span>
+											: signal.stats
+												? <span className="chip chip-success">Active</span>
+												: <span className="chip">Pending</span>
+									}
 								</td>
 							</tr>
 						))}
