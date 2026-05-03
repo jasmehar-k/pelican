@@ -114,6 +114,7 @@ def initial_state(theme: str) -> AgentState:
         run_id=str(uuid.uuid4()),
         retry_count=0,
         memo=None,
+        signal_name=None,
     )
 
 
@@ -130,6 +131,7 @@ _STATE_DEFAULTS: dict = {
     "run_id": "",
     "retry_count": 0,
     "memo": None,
+    "signal_name": None,
 }
 
 

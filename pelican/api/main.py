@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 import pelican.factors  # noqa: F401 - register classic and EDGAR factors
+from pelican.backtest.signals import load_dynamic_signals
 from pelican.data.store import DataStore
 from pelican.utils.config import get_settings
 from pelican.utils.logging import configure_logging
@@ -19,6 +20,7 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     store = DataStore(settings.duckdb_path)
     store.init_schema()
+    load_dynamic_signals(store)
 
     app.state.settings = settings
     app.state.store = store

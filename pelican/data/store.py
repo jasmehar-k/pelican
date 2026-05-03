@@ -55,7 +55,8 @@ CREATE TABLE IF NOT EXISTS research_log (
     ic_tstat           DOUBLE,
     sharpe_net         DOUBLE,
     feedback           TEXT,
-    retry_count        INTEGER DEFAULT 0
+    retry_count        INTEGER DEFAULT 0,
+    signal_name        VARCHAR
 );
 
 CREATE TABLE IF NOT EXISTS signal_memos (
@@ -95,14 +96,15 @@ class DataStore:
         # Idempotent column migrations for tables that existed before schema additions.
         self._conn.execute("ALTER TABLE research_log ADD COLUMN IF NOT EXISTS papers JSON")
         self._conn.execute("ALTER TABLE research_log ADD COLUMN IF NOT EXISTS retry_count INTEGER DEFAULT 0")
+        self._conn.execute("ALTER TABLE research_log ADD COLUMN IF NOT EXISTS signal_name VARCHAR")
 
     def log_run(self, state: dict[str, Any]) -> None:
         self._conn.execute(
             """
             INSERT INTO research_log (
                 run_id, theme, arxiv_ids, papers, signal_hypothesis, generated_code,
-                decision, ic_tstat, sharpe_net, feedback, retry_count
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                decision, ic_tstat, sharpe_net, feedback, retry_count, signal_name
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 state.get("run_id"),
@@ -116,6 +118,7 @@ class DataStore:
                 state.get("sharpe_net"),
                 state.get("feedback"),
                 state.get("retry_count", 0),
+                state.get("signal_name"),
             ],
         )
 
@@ -124,7 +127,7 @@ class DataStore:
             """
             SELECT run_id, ts, theme, arxiv_ids, papers, signal_hypothesis,
                    generated_code, decision, ic_tstat, sharpe_net,
-                   feedback, retry_count
+                   feedback, retry_count, signal_name
             FROM research_log
             ORDER BY ts DESC
             LIMIT ?
@@ -137,12 +140,25 @@ class DataStore:
             """
             SELECT run_id, ts, theme, arxiv_ids, papers, signal_hypothesis,
                    generated_code, decision, ic_tstat, sharpe_net,
-                   feedback, retry_count
+                   feedback, retry_count, signal_name
             FROM research_log
             WHERE run_id = ?
             LIMIT 1
             """,
             [run_id],
+        )
+
+    def get_accepted_signals(self) -> pl.DataFrame:
+        """Return accepted runs that have both a signal_name and generated_code."""
+        return self.query(
+            """
+            SELECT signal_name, generated_code, signal_hypothesis, theme
+            FROM research_log
+            WHERE decision = 'accept'
+              AND signal_name IS NOT NULL
+              AND generated_code IS NOT NULL
+            ORDER BY ts DESC
+            """
         )
 
     def log_memo(self, state: dict[str, Any]) -> None:

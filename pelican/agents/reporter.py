@@ -86,6 +86,18 @@ def _make_reporter_node(store: Any, model: str | None = None):
                     f"net Sharpe={state.get('sharpe_net', 0):.3f}."
                 )
 
+        if decision == "accept":
+            signal_name = state.get("signal_name")
+            code = state.get("generated_code") or ""
+            description = state.get("signal_hypothesis") or state["theme"]
+            if signal_name and code:
+                from pelican.backtest.signals import register_dynamic
+                ok = register_dynamic(signal_name, description, code)
+                if ok:
+                    log.info("reporter: signal registered in live registry", signal_name=signal_name)
+                else:
+                    log.warning("reporter: register_dynamic failed", signal_name=signal_name)
+
         try:
             store.log_memo({**state, "memo": memo})
         except Exception as exc:

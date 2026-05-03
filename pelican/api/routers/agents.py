@@ -30,15 +30,15 @@ def _ts() -> str:
 _ALL_SAFE_KEYS = {
     "decision", "feedback", "ic_tstat", "sharpe_net",
     "retry_count", "signal_hypothesis", "arxiv_ids", "theme",
-    "errors", "memo",
+    "errors", "memo", "signal_name",
 }
 
 # Keys each node actually owns — prevents stale metrics from bleeding through.
 _NODE_KEYS: dict[str, set[str]] = {
-    "researcher": {"theme", "arxiv_ids", "signal_hypothesis"},
+    "researcher": {"theme", "arxiv_ids", "signal_hypothesis", "signal_name"},
     "coder":      {"theme", "retry_count", "errors"},
     "critic":     {"theme", "decision", "feedback", "ic_tstat", "sharpe_net", "retry_count"},
-    "reporter":   {"theme", "decision", "memo"},
+    "reporter":   {"theme", "decision", "memo", "signal_name"},
 }
 
 
@@ -241,6 +241,7 @@ async def list_research_log(request: Request) -> list[AgentRunLineage]:
                 arxiv_ids=list(row.get("arxiv_ids") or []),
                 papers=papers,
                 signal_hypothesis=row.get("signal_hypothesis"),
+                signal_name=row.get("signal_name"),
                 generated_code=row.get("generated_code"),
                 decision=row.get("decision"),
                 ic_tstat=row.get("ic_tstat"),
@@ -269,6 +270,7 @@ async def get_run_research(request: Request, run_id: str) -> AgentRunLineage:
         arxiv_ids=list(row.get("arxiv_ids") or []),
         papers=papers,
         signal_hypothesis=row.get("signal_hypothesis"),
+        signal_name=row.get("signal_name"),
         generated_code=row.get("generated_code"),
         decision=row.get("decision"),
         ic_tstat=row.get("ic_tstat"),

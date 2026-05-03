@@ -75,6 +75,69 @@ def list_signals() -> list[str]:
     return sorted(_REGISTRY.keys())
 
 
+def register_dynamic(
+    name: str,
+    description: str,
+    code_str: str,
+    requires_fundamentals: bool | None = None,
+) -> bool:
+    """Compile and register a signal from generated source code.
+
+    Returns True if the signal was registered successfully, False on any error.
+    Last writer wins — calling this twice with the same name overwrites the first.
+    """
+    from pelican.agents.tools.code_exec import execute_signal_code, needs_fundamentals
+
+    ok, err, fn = execute_signal_code(code_str)
+    if not ok:
+        return False
+
+    req_fund = requires_fundamentals if requires_fundamentals is not None else needs_fundamentals(code_str)
+    spec = SignalSpec(
+        name=name,
+        description=description,
+        lookback_days=504,
+        requires_fundamentals=req_fund,
+        data_deps=(),
+        expected_ic_range=(-0.10, 0.10),
+        data_frequency="monthly",
+    )
+    _REGISTRY[name] = SignalDef(spec=spec, fn=fn)
+    return True
+
+
+def load_dynamic_signals(store: object) -> int:
+    """Reload accepted agent signals from the database into the registry.
+
+    Called once at app startup so previously discovered signals survive restarts.
+    Returns the number of signals successfully registered.
+    """
+    import logging
+    log = logging.getLogger(__name__)
+
+    try:
+        rows = store.get_accepted_signals().to_dicts()
+    except Exception as exc:
+        log.warning("load_dynamic_signals: failed to query store: %s", exc)
+        return 0
+
+    count = 0
+    for row in rows:
+        name = row.get("signal_name") or ""
+        code = row.get("generated_code") or ""
+        description = row.get("signal_hypothesis") or row.get("theme") or name
+        if not name or not code:
+            continue
+        if register_dynamic(name, description, code):
+            count += 1
+        else:
+            log.warning("load_dynamic_signals: failed to register '%s'", name)
+
+    if count:
+        log.info("load_dynamic_signals: registered %d agent signal(s)", count)
+    return count
+
+
 # ---------------------------------------------------------------------------
 # Cross-section feature builder
 # ---------------------------------------------------------------------------

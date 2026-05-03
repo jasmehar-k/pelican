@@ -56,6 +56,7 @@ class AgentRunLineage(BaseModel):
     arxiv_ids: list[str] = Field(default_factory=list)
     papers: list[ResearchPaper] = Field(default_factory=list)
     signal_hypothesis: str | None = None
+    signal_name: str | None = None
     generated_code: str | None = None
     decision: str | None = None
     ic_tstat: float | None = None
