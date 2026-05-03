@@ -27,6 +27,7 @@ def signal_spec_payload(signal_name: str) -> dict[str, Any]:
         "lookback_days": spec.lookback_days,
         "requires_fundamentals": spec.requires_fundamentals,
         "requires_edgar": spec.requires_edgar,
+        "requires_news": spec.requires_news,
         "data_deps": list(spec.data_deps),
         "edgar_data_deps": list(spec.edgar_data_deps),
         "expected_ic_range": list(spec.expected_ic_range),

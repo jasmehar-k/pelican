@@ -81,6 +81,15 @@ CREATE TABLE IF NOT EXISTS edgar_sentiment (
     model        VARCHAR,
     PRIMARY KEY (ticker, period_end, filing_type)
 );
+
+CREATE TABLE IF NOT EXISTS news_sentiment (
+    ticker      VARCHAR NOT NULL,
+    date        DATE    NOT NULL,
+    avg_score   DOUBLE,
+    n_articles  INTEGER,
+    model       VARCHAR,
+    PRIMARY KEY (ticker, date)
+);
 """
 
 
@@ -97,6 +106,12 @@ class DataStore:
         self._conn.execute("ALTER TABLE research_log ADD COLUMN IF NOT EXISTS papers JSON")
         self._conn.execute("ALTER TABLE research_log ADD COLUMN IF NOT EXISTS retry_count INTEGER DEFAULT 0")
         self._conn.execute("ALTER TABLE research_log ADD COLUMN IF NOT EXISTS signal_name VARCHAR")
+        # news_sentiment may not exist on older databases
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS news_sentiment ("
+            "ticker VARCHAR NOT NULL, date DATE NOT NULL, avg_score DOUBLE, "
+            "n_articles INTEGER, model VARCHAR, PRIMARY KEY (ticker, date))"
+        )
 
     def log_run(self, state: dict[str, Any]) -> None:
         self._conn.execute(
@@ -183,6 +198,10 @@ class DataStore:
     def store_edgar_scores(self, df: pl.DataFrame) -> int:
         """Upsert rows into edgar_sentiment.  Returns number of rows written."""
         return self.write(df, "edgar_sentiment")
+
+    def store_news_scores(self, df: pl.DataFrame) -> int:
+        """Upsert rows into news_sentiment.  Returns number of rows written."""
+        return self.write(df, "news_sentiment")
 
     def get_edgar_coverage(self) -> pl.DataFrame:
         """Return per-ticker filing counts and date range from edgar_sentiment."""

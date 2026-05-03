@@ -128,6 +128,24 @@ def run_backtest(
                 signal=signal_name,
             )
 
+    # Fetch news sentiment panel once if the signal needs it.
+    news_panel: pl.DataFrame | None = None
+    if sig.spec.requires_news:
+        news_panel = store.query(
+            """
+            SELECT ticker, date, avg_score
+            FROM news_sentiment
+            WHERE date >= ? AND date <= ?
+            ORDER BY ticker, date
+            """,
+            [panel_start, config.end],
+        )
+        if news_panel.is_empty():
+            log.warning(
+                "no news sentiment data found — signal will have no scores",
+                signal=signal_name,
+            )
+
     # Fetch fundamentals panel once if the signal needs it.
     fund_panel: pl.DataFrame | None = None
     if sig.spec.requires_fundamentals:
@@ -178,6 +196,18 @@ def run_backtest(
                 .drop("filing_date")
             )
             cs = cs.join(pit_edgar, on="ticker", how="left")
+
+        # Point-in-time join of news sentiment: most recent date <= rebal_date.
+        if news_panel is not None and not news_panel.is_empty():
+            pit_news = (
+                news_panel
+                .filter(pl.col("date") <= rebal_date)
+                .sort("date")
+                .group_by("ticker")
+                .last()
+                .drop("date")
+            )
+            cs = cs.join(pit_news, on="ticker", how="left")
 
         # Point-in-time join of fundamentals: use the most recent row whose
         # available_date <= rebal_date so no future data leaks in.

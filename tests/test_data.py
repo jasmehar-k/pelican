@@ -92,7 +92,7 @@ def test_store_init_schema_idempotent(store: DataStore) -> None:
     tables = store.query("SHOW TABLES")
     assert set(tables["name"].to_list()) == {
         "prices", "sp500_universe", "fundamentals",
-        "research_log", "signal_memos", "edgar_sentiment",
+        "research_log", "signal_memos", "edgar_sentiment", "news_sentiment",
     }
 
 
