@@ -122,8 +122,9 @@ def _run_graph_thread(
         _RUN_RESULTS[run_id] = final_state
         try:
             store.log_run(final_state)
-        except Exception:
-            pass
+        except Exception as log_exc:
+            import logging
+            logging.getLogger(__name__).error("log_run failed: %s", log_exc)
 
         _put({"event": "run_complete", "node": None,
               "data": _safe_state(final_state), "timestamp": _ts()})

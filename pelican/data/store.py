@@ -92,7 +92,9 @@ class DataStore:
 
     def init_schema(self) -> None:
         self._conn.execute(_SCHEMA_SQL)
+        # Idempotent column migrations for tables that existed before schema additions.
         self._conn.execute("ALTER TABLE research_log ADD COLUMN IF NOT EXISTS papers JSON")
+        self._conn.execute("ALTER TABLE research_log ADD COLUMN IF NOT EXISTS retry_count INTEGER DEFAULT 0")
 
     def log_run(self, state: dict[str, Any]) -> None:
         self._conn.execute(
