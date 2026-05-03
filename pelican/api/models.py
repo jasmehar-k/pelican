@@ -98,6 +98,7 @@ class BacktestConfigModel(BaseModel):
     start: date
     end: date
     cost_bps: float
+    impact_bps: float = 5.0
     min_universe_size: int
     min_score_coverage: float
     lookback_calendar_days: int
@@ -137,7 +138,8 @@ class PortfolioOptimizeRequest(BaseModel):
     rebalance_date: date | None = None
     start: date = Field(default_factory=_default_start)
     end: date = Field(default_factory=_default_end)
-    cost_bps: float = 5.0
+    cost_bps: float = 2.0
+    impact_bps: float = 5.0
     lambda_risk: float = 1.0
     max_weight: float = 0.05
     turnover_limit: float | None = None

@@ -272,7 +272,7 @@ class TestNoLookAhead:
 class TestTransactionCosts:
     """Net return must be strictly less than gross when turnover > 0 and cost_bps > 0."""
 
-    def _run_with_costs(self, cost_bps) -> tuple:
+    def _run_with_costs(self, cost_bps, impact_bps: float = 0.0) -> tuple:
         store = _make_store()
         n_tickers = 25
         tickers = [f"T{i:02d}" for i in range(n_tickers)]
@@ -299,6 +299,7 @@ class TestTransactionCosts:
             start=date(2019, 4, 1),
             end=date(2019, 12, 31),
             cost_bps=cost_bps,
+            impact_bps=impact_bps,
             min_universe_size=5,
             min_score_coverage=0.1,
             lookback_calendar_days=150,
@@ -320,19 +321,19 @@ class TestTransactionCosts:
     def test_both_legs_charged(self):
         """Cost must reflect BOTH long and short turnover, not just the long book.
 
-        We verify this by checking that the cost per period equals
-        avg_turnover * cost_bps / 10000, where avg_turnover is the
-        average of long AND short book turnovers.
+        Verifies the Almgren-Chriss two-parameter formula:
+          cost = (turnover * cost_bps + turnover^1.5 * impact_bps) / 10_000
 
-        If only the long book were charged, the cost would be roughly half
-        of what it should be on average.
+        Uses impact_bps=3.0 to exercise the non-linear term.
         """
-        result = self._run_with_costs(10.0)
+        cost_bps = 10.0
+        impact_bps = 3.0
+        result = self._run_with_costs(cost_bps, impact_bps=impact_bps)
         pr = result.period_returns.drop_nulls(["ls_gross", "ls_net", "turnover"])
-        # For each period, ls_gross - ls_net should equal turnover * bps / 10000
         diffs = (pr["ls_gross"] - pr["ls_net"]).to_list()
-        to_costs = (pr["turnover"] * 10.0 / 10_000).to_list()
-        for diff, expected in zip(diffs, to_costs):
+        turnover_vals = pr["turnover"].to_list()
+        for diff, to in zip(diffs, turnover_vals):
+            expected = (to * cost_bps + to**1.5 * impact_bps) / 10_000
             assert abs(diff - expected) < 1e-10
 
     def test_first_period_full_turnover_both_books(self):

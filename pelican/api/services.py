@@ -36,11 +36,12 @@ def signal_spec_payload(signal_name: str) -> dict[str, Any]:
     }
 
 
-def _backtest_config(settings: Any, start: date | None, end: date | None, cost_bps: float = 5.0) -> BacktestConfig:
+def _backtest_config(settings: Any, start: date | None, end: date | None, cost_bps: float = 2.0, impact_bps: float = 5.0) -> BacktestConfig:
     return BacktestConfig(
         start=start or settings.backtest_start,
         end=end or settings.backtest_end,
         cost_bps=cost_bps,
+        impact_bps=impact_bps,
     )
 
 
@@ -51,6 +52,7 @@ def serialize_backtest_result(result: BacktestResult) -> dict[str, Any]:
             "start": result.config.start,
             "end": result.config.end,
             "cost_bps": result.config.cost_bps,
+            "impact_bps": result.config.impact_bps,
             "min_universe_size": result.config.min_universe_size,
             "min_score_coverage": result.config.min_score_coverage,
             "lookback_calendar_days": result.config.lookback_calendar_days,
@@ -121,6 +123,7 @@ def build_tearsheet(settings: Any, store: Any, signal_name: str, start: date | N
             "start": cfg.start,
             "end": cfg.end,
             "cost_bps": cfg.cost_bps,
+            "impact_bps": cfg.impact_bps,
             "min_universe_size": cfg.min_universe_size,
             "min_score_coverage": cfg.min_score_coverage,
             "lookback_calendar_days": cfg.lookback_calendar_days,
@@ -205,6 +208,7 @@ def optimize_portfolio(settings: Any, store: Any, request: Any) -> dict[str, Any
         start=request.start,
         end=request.end,
         cost_bps=request.cost_bps,
+        impact_bps=getattr(request, "impact_bps", 5.0),
         min_universe_size=request.min_universe_size,
         min_score_coverage=request.min_score_coverage,
         lookback_calendar_days=request.lookback_calendar_days,

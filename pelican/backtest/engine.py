@@ -43,7 +43,12 @@ log = get_logger(__name__)
 class BacktestConfig:
     start: date
     end: date
-    cost_bps: float = 5.0
+    # Almgren-Chriss two-parameter cost model:
+    #   total_cost = (turnover * cost_bps + turnover^1.5 * impact_bps) / 10_000
+    # cost_bps  — half-spread (linear in turnover fraction)
+    # impact_bps — temporary market impact coefficient (concave in trade size)
+    cost_bps: float = 2.0
+    impact_bps: float = 5.0
     min_universe_size: int = 50
     min_score_coverage: float = 0.5
     lookback_calendar_days: int = 800
@@ -272,7 +277,8 @@ def run_backtest(
         prev_shorts = curr_shorts
 
         # Net return after transaction costs on both legs.
-        cost = turnover * config.cost_bps / 10_000
+        # Spread component is linear; impact component scales as turnover^1.5.
+        cost = (turnover * config.cost_bps + turnover**1.5 * config.impact_bps) / 10_000
         ls_net: float | None = ls_gross - cost if ls_gross is not None else None
 
         # IC for this period — store None rather than float("nan") so that
