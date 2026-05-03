@@ -66,7 +66,7 @@ def build_graph(
     if backtest_config is None:
         today = date.today()
         backtest_config = BacktestConfig(
-            start=today - timedelta(days=365),
+            start=today - timedelta(days=3 * 365),
             end=today - timedelta(days=1),
         )
 

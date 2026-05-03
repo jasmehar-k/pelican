@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 
 def _default_start() -> date:
-    return date.today() - timedelta(days=365)
+    return date.today() - timedelta(days=3 * 365)
 
 
 def _default_end() -> date:
