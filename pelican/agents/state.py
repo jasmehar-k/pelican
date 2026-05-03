@@ -20,3 +20,4 @@ class AgentState(TypedDict):
     retry_count: int            # graph-level coder→critic cycles completed
     memo: str | None            # Reporter-generated analyst memo (accepted signals only)
     signal_name: str | None     # short snake_case identifier for the accepted signal
+    hypotheses: list[dict]      # all hypotheses from researcher; coder picks by retry_count

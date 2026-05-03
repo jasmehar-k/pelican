@@ -115,6 +115,7 @@ def initial_state(theme: str) -> AgentState:
         retry_count=0,
         memo=None,
         signal_name=None,
+        hypotheses=[],
     )
 
 
@@ -132,6 +133,7 @@ _STATE_DEFAULTS: dict = {
     "retry_count": 0,
     "memo": None,
     "signal_name": None,
+    "hypotheses": [],
 }
 
 

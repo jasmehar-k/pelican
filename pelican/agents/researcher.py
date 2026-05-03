@@ -200,13 +200,15 @@ def _make_researcher_node(model: str | None = None):
             papers, hypotheses = [], []
 
         arxiv_ids: list[str] = [p["arxiv_id"] for p in papers[:5]]
-        # Pick the first well-formed hypothesis as the signal description for the coder.
+        # Hypothesis 0 is the default for the first coder attempt; later retries
+        # will pick subsequent hypotheses via retry_count (see coder node).
         signal_hypothesis: str | None = hypotheses[0]["hypothesis"] if hypotheses else None
         signal_name: str | None = hypotheses[0]["signal_name"] if hypotheses else None
 
         return {
             **state,
             "papers": papers,
+            "hypotheses": hypotheses,
             "signal_hypothesis": signal_hypothesis,
             "arxiv_ids": arxiv_ids,
             "run_id": run_id,

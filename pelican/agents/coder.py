@@ -121,12 +121,24 @@ def _make_coder_node(
         retry_count = state.get("retry_count", 0) + 1
         critic_feedback = state.get("feedback") if retry_count > 1 else None
 
+        # On each graph-level retry, advance to the next distinct hypothesis so
+        # we try a genuinely different economic mechanism instead of rephrasing.
+        hypotheses: list[dict] = list(state.get("hypotheses") or [])
+        hyp_idx = min(retry_count - 1, len(hypotheses) - 1) if hypotheses else -1
+        if hyp_idx >= 0:
+            active_hypothesis = hypotheses[hyp_idx]
+            description = active_hypothesis["hypothesis"]
+            active_signal_name: str | None = active_hypothesis.get("signal_name")
+        else:
+            description = state.get("signal_hypothesis") or state["theme"]
+            active_signal_name = state.get("signal_name")
+
         for attempt in range(1, MAX_RETRIES + 1):
             if on_attempt_start:
                 on_attempt_start(attempt)
             log.info("coder attempt", attempt=attempt, theme=state["theme"])
             user_msg = _build_user_message(
-                state.get("signal_hypothesis") or state["theme"],
+                description,
                 errors,
                 critic_feedback=critic_feedback,
             )
@@ -162,7 +174,14 @@ def _make_coder_node(
             success, error_msg, _ = execute_signal_code(code)
             if success:
                 log.info("coder succeeded", attempt=attempt)
-                return {**state, "generated_code": code, "errors": errors, "retry_count": retry_count}
+                return {
+                    **state,
+                    "generated_code": code,
+                    "errors": errors,
+                    "retry_count": retry_count,
+                    "signal_hypothesis": description,
+                    "signal_name": active_signal_name,
+                }
 
             err = f"attempt {attempt}: {error_msg}"
             log.warning("sandbox rejected code", attempt=attempt, error=error_msg)
