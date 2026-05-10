@@ -37,6 +37,8 @@ class SignalSpec:
     edgar_data_deps: tuple[str, ...] = ()
     # Whether the engine should join the news_sentiment panel into the cross-section.
     requires_news: bool = False
+    # Whether the engine should join the earnings_surprises panel into the cross-section.
+    requires_earnings: bool = False
     # Per-signal minimum score coverage override.  When set, the engine uses this
     # instead of BacktestConfig.min_score_coverage.  Useful for alternative-data
     # signals that are only partially seeded (e.g. EDGAR_SENTIMENT).

@@ -28,6 +28,7 @@ def signal_spec_payload(signal_name: str) -> dict[str, Any]:
         "requires_fundamentals": spec.requires_fundamentals,
         "requires_edgar": spec.requires_edgar,
         "requires_news": spec.requires_news,
+        "requires_earnings": spec.requires_earnings,
         "data_deps": list(spec.data_deps),
         "edgar_data_deps": list(spec.edgar_data_deps),
         "expected_ic_range": list(spec.expected_ic_range),
@@ -208,6 +209,24 @@ def _build_cross_section_at_date(
                     .drop("filing_date")
                 )
                 cs = cs.join(pit_edgar, on="ticker", how="left")
+        except Exception:
+            pass
+
+    if any(get_signal(name).spec.requires_earnings for name in signal_names):
+        try:
+            earnings = store.query(
+                "SELECT ticker, date, surprise_pct, reported_eps, estimated_eps "
+                "FROM earnings_surprises WHERE date <= '{d}' ORDER BY ticker, date".format(d=rebal_date)
+            )
+            if not earnings.is_empty():
+                pit_earnings = (
+                    earnings.filter(pl.col("date") <= rebal_date)
+                    .sort("date")
+                    .group_by("ticker")
+                    .last()
+                    .drop("date")
+                )
+                cs = cs.join(pit_earnings, on="ticker", how="left")
         except Exception:
             pass
 

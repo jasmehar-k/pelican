@@ -146,6 +146,24 @@ def run_backtest(
                 signal=signal_name,
             )
 
+    # Fetch earnings surprises panel once if the signal needs it.
+    earnings_panel: pl.DataFrame | None = None
+    if sig.spec.requires_earnings:
+        earnings_panel = store.query(
+            """
+            SELECT ticker, date, surprise_pct, reported_eps, estimated_eps
+            FROM earnings_surprises
+            WHERE date >= ? AND date <= ?
+            ORDER BY ticker, date
+            """,
+            [panel_start, config.end],
+        )
+        if earnings_panel.is_empty():
+            log.warning(
+                "no earnings surprise data found — signal will have no scores",
+                signal=signal_name,
+            )
+
     # Fetch fundamentals panel once if the signal needs it.
     fund_panel: pl.DataFrame | None = None
     if sig.spec.requires_fundamentals:
@@ -208,6 +226,18 @@ def run_backtest(
                 .drop("date")
             )
             cs = cs.join(pit_news, on="ticker", how="left")
+
+        # Point-in-time join of earnings surprises: most recent announcement <= rebal_date.
+        if earnings_panel is not None and not earnings_panel.is_empty():
+            pit_earnings = (
+                earnings_panel
+                .filter(pl.col("date") <= rebal_date)
+                .sort("date")
+                .group_by("ticker")
+                .last()
+                .drop("date")
+            )
+            cs = cs.join(pit_earnings, on="ticker", how="left")
 
         # Point-in-time join of fundamentals: use the most recent row whose
         # available_date <= rebal_date so no future data leaks in.

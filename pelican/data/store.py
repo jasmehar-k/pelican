@@ -90,6 +90,15 @@ CREATE TABLE IF NOT EXISTS news_sentiment (
     model       VARCHAR,
     PRIMARY KEY (ticker, date)
 );
+
+CREATE TABLE IF NOT EXISTS earnings_surprises (
+    ticker          VARCHAR NOT NULL,
+    date            DATE    NOT NULL,
+    surprise_pct    DOUBLE,
+    reported_eps    DOUBLE,
+    estimated_eps   DOUBLE,
+    PRIMARY KEY (ticker, date)
+);
 """
 
 
@@ -111,6 +120,12 @@ class DataStore:
             "CREATE TABLE IF NOT EXISTS news_sentiment ("
             "ticker VARCHAR NOT NULL, date DATE NOT NULL, avg_score DOUBLE, "
             "n_articles INTEGER, model VARCHAR, PRIMARY KEY (ticker, date))"
+        )
+        # earnings_surprises may not exist on older databases
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS earnings_surprises ("
+            "ticker VARCHAR NOT NULL, date DATE NOT NULL, surprise_pct DOUBLE, "
+            "reported_eps DOUBLE, estimated_eps DOUBLE, PRIMARY KEY (ticker, date))"
         )
 
     def log_run(self, state: dict[str, Any]) -> None:
@@ -202,6 +217,10 @@ class DataStore:
     def store_news_scores(self, df: pl.DataFrame) -> int:
         """Upsert rows into news_sentiment.  Returns number of rows written."""
         return self.write(df, "news_sentiment")
+
+    def store_earnings(self, df: pl.DataFrame) -> int:
+        """Upsert rows into earnings_surprises.  Returns number of rows written."""
+        return self.write(df, "earnings_surprises")
 
     def get_edgar_coverage(self) -> pl.DataFrame:
         """Return per-ticker filing counts and date range from edgar_sentiment."""
