@@ -108,17 +108,26 @@ export default function PortfolioPage() {
 								}}
 							>
 								<strong>{signal.name}</strong>
-								<span>IC {signal.stats?.ic_mean?.toFixed(3) ?? 'n/a'} · Sharpe {signal.stats?.sharpe_net?.toFixed(2) ?? 'n/a'}</span>
+								<span style={{ display: 'block', marginTop: '4px' }}>IC {signal.stats?.ic_mean?.toFixed(3) ?? 'n/a'} · Sharpe {signal.stats?.sharpe_net?.toFixed(2) ?? 'n/a'}</span>
+								<span style={{ display: 'block', marginTop: '2px', fontSize: '0.7rem', opacity: 0.5 }}>
+									{signal.stats ? `${signal.stats.n_periods} periods` : signal.error ? 'no data' : '—'}
+								</span>
 							</button>
 						)
 					})}
 				</div>
+				<p className="muted-text" style={{ fontSize: '0.75rem', marginTop: '4px' }}>
+					IC and Sharpe reflect the full configured backtest window. Classic factors like momentum and low-vol are regime-dependent — performance varies significantly across market cycles.
+				</p>
 
 				<div className="chart-card">
 					<div className="chart-header">
 						<div>
 							<h3>IC-weighted portfolio backtest</h3>
-							<p>Walk-forward net returns, weighted by each signal's historical IC.</p>
+							<p>
+								Walk-forward net returns, weighted by each signal's historical IC.
+								{backtest && ` Period: ${String(backtest.start).slice(0, 10)} → ${String(backtest.end).slice(0, 10)}.`}
+							</p>
 						</div>
 						{backtest && (
 							<div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
