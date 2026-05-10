@@ -81,19 +81,26 @@ def signal_summary_payload(settings: Any, store: Any, signal_name: str, start: d
     cfg = _backtest_config(settings, start, end)
     try:
         result = run_backtest(signal_name, cfg, store)
-        base["stats"] = {
-            "ic_mean": result.ic_mean,
-            "icir": result.icir,
-            "ic_tstat": result.ic_tstat,
-            "sharpe_gross": result.sharpe_gross,
-            "sharpe_net": result.sharpe_net,
-            "max_drawdown_gross": result.max_drawdown_gross,
-            "max_drawdown_net": result.max_drawdown_net,
-            "avg_turnover": result.avg_turnover,
-            "n_periods": result.n_periods,
-            "avg_universe_size": result.avg_universe_size,
-        }
-        base["error"] = None
+        if result.avg_universe_size < 20:
+            base["stats"] = None
+            base["error"] = (
+                f"Insufficient coverage: {result.avg_universe_size:.0f} avg tickers/period "
+                f"(need ≥20 for reliable IC estimates — seed more data)"
+            )
+        else:
+            base["stats"] = {
+                "ic_mean": result.ic_mean,
+                "icir": result.icir,
+                "ic_tstat": result.ic_tstat,
+                "sharpe_gross": result.sharpe_gross,
+                "sharpe_net": result.sharpe_net,
+                "max_drawdown_gross": result.max_drawdown_gross,
+                "max_drawdown_net": result.max_drawdown_net,
+                "avg_turnover": result.avg_turnover,
+                "n_periods": result.n_periods,
+                "avg_universe_size": result.avg_universe_size,
+            }
+            base["error"] = None
     except Exception as exc:
         base["stats"] = None
         base["error"] = str(exc)
@@ -105,19 +112,26 @@ def build_tearsheet(settings: Any, store: Any, signal_name: str, start: date | N
     result = run_backtest(signal_name, cfg, store)
     # Build summary inline from the result we already have — avoids a second backtest run.
     spec_payload = signal_spec_payload(signal_name)
-    spec_payload["stats"] = {
-        "ic_mean": result.ic_mean,
-        "icir": result.icir,
-        "ic_tstat": result.ic_tstat,
-        "sharpe_gross": result.sharpe_gross,
-        "sharpe_net": result.sharpe_net,
-        "max_drawdown_gross": result.max_drawdown_gross,
-        "max_drawdown_net": result.max_drawdown_net,
-        "avg_turnover": result.avg_turnover,
-        "n_periods": result.n_periods,
-        "avg_universe_size": result.avg_universe_size,
-    }
-    spec_payload["error"] = None
+    if result.avg_universe_size < 20:
+        spec_payload["stats"] = None
+        spec_payload["error"] = (
+            f"Insufficient coverage: {result.avg_universe_size:.0f} avg tickers/period "
+            f"(need ≥20 for reliable IC estimates — seed more data)"
+        )
+    else:
+        spec_payload["stats"] = {
+            "ic_mean": result.ic_mean,
+            "icir": result.icir,
+            "ic_tstat": result.ic_tstat,
+            "sharpe_gross": result.sharpe_gross,
+            "sharpe_net": result.sharpe_net,
+            "max_drawdown_gross": result.max_drawdown_gross,
+            "max_drawdown_net": result.max_drawdown_net,
+            "avg_turnover": result.avg_turnover,
+            "n_periods": result.n_periods,
+            "avg_universe_size": result.avg_universe_size,
+        }
+        spec_payload["error"] = None
     return {
         "summary": spec_payload,
         "config": {
