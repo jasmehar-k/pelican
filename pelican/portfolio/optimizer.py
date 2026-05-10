@@ -38,6 +38,11 @@ class PortfolioConfig:
     lambda_risk: float = 1.0          # risk-aversion coefficient (mean-variance only)
     max_weight: float = 0.05          # per-stock absolute weight cap
     turnover_limit: float | None = None   # L1 turnover vs prev weights (fraction)
+    # Linear spread cost penalized in the CVXPy objective when prev_weights is provided.
+    # Units: basis points. The turnover^1.5 impact term cannot go in a convex objective,
+    # so only the linear half-spread is included here; impact is charged post-optimization
+    # in the backtest engine's Almgren-Chriss cost formula.
+    cost_bps: float = 2.0
     # sector_map: ticker -> sector label; if provided, each sector's net exposure is capped.
     sector_map: dict[str, str] | None = None
     sector_cap: float = 0.10          # max |net sector weight| (used if sector_map set)
@@ -139,11 +144,14 @@ def _cvxpy_optimize(
     # Ledoit-Wolf covariance should be PSD, but CVXPy's numerical certification
     # can fail on larger matrices. psd_wrap skips that brittle check.
     portfolio_var = cp.quad_form(w, cp.psd_wrap(cov))
+    # Linear spread cost in objective when prior weights are known.
+    # turnover^1.5 market impact is non-convex; only the linear term goes here.
+    cost_term = (config.cost_bps / 10_000) * cp.norm1(w - prev_weights) if prev_weights is not None else 0
     if config.objective == "min_variance":
-        objective = cp.Minimize(portfolio_var)
+        objective = cp.Minimize(portfolio_var + cost_term)
     else:  # max_sharpe / mean-variance
         objective = cp.Minimize(
-            -alpha @ w + (config.lambda_risk / 2.0) * portfolio_var
+            -alpha @ w + (config.lambda_risk / 2.0) * portfolio_var + cost_term
         )
 
     constraints = [

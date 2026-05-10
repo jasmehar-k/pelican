@@ -289,6 +289,7 @@ def optimize_portfolio(settings: Any, store: Any, request: Any) -> dict[str, Any
             lambda_risk=request.lambda_risk,
             max_weight=request.max_weight,
             turnover_limit=request.turnover_limit,
+            cost_bps=config.cost_bps,
         ),
     )
 
