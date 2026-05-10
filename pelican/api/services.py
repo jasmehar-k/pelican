@@ -368,9 +368,12 @@ def signal_names() -> list[str]:
 def run_portfolio_backtest(settings: Any, store: Any, request: Any) -> dict[str, Any]:
     """Walk-forward IC-weighted portfolio backtest over the requested date range.
 
-    For each signal, runs a full backtest to get per-period L/S net returns and
-    IC mean.  Combines signals by IC weight and returns the resulting equity curve
-    with summary statistics.
+    Walk-forward optimizer-based portfolio backtest.
+
+    At each rebalance date: builds the cross-section, combines signal scores into
+    an alpha vector (IC-weighted), solves the CVXPy mean-variance QP, then
+    measures actual portfolio P&L as w @ forward_return_21d minus Almgren-Chriss
+    transaction costs.  Tracks the previous period's weights for turnover continuity.
     """
     import math as _math
 
@@ -388,66 +391,142 @@ def run_portfolio_backtest(settings: Any, store: Any, request: Any) -> dict[str,
         impact_bps=getattr(request, "impact_bps", 5.0),
     )
 
-    # Run each signal's backtest.
-    results: dict[str, Any] = {}
+    rebal_dates = get_rebalance_dates(cfg.start, cfg.end, store)
+    if not rebal_dates:
+        raise ValueError("No rebalance dates found in the requested window")
+
+    # Pre-compute IC weights from per-signal historical backtests (reused every period).
+    ic_raw: dict[str, float] = {}
     for name in signal_names_list:
         try:
-            results[name] = run_backtest(name, cfg, store)
+            r = run_backtest(name, cfg, store)
+            if r.n_periods > 0 and not _math.isnan(r.ic_mean):
+                ic_raw[name] = max(0.0, r.ic_mean)
         except Exception:
-            pass  # skip signals with no data
-
-    if not results:
-        raise ValueError("No backtest data available for the selected signals and date range")
-
-    # IC weights: positive IC only; equal-weight fallback.
-    ic_raw = {
-        name: max(0.0, r.ic_mean)
-        for name, r in results.items()
-        if not _math.isnan(r.ic_mean)
-    }
+            pass
     total_ic = sum(ic_raw.values())
-    if total_ic > 0:
-        ic_weights: dict[str, float] = {n: w / total_ic for n, w in ic_raw.items()}
-    else:
-        ic_weights = {n: 1.0 / len(results) for n in results}
-
-    # Aggregate per-period returns across signals (union of dates, IC-weighted).
-    returns_by_date: dict[Any, list[tuple[str, float]]] = {}
-    for name, r in results.items():
-        for row in r.period_returns.to_dicts():
-            d = row["date"]
-            ls = row.get("ls_net") if row.get("ls_net") is not None else row.get("ls_gross")
-            if ls is not None:
-                returns_by_date.setdefault(d, []).append((name, float(ls)))
+    ic_weights: dict[str, float] = (
+        {n: w / total_ic for n, w in ic_raw.items()} if total_ic > 0
+        else {n: 1.0 / len(signal_names_list) for n in signal_names_list}
+    )
 
     equity_curve = []
     equity = 1.0
     net_returns: list[float] = []
+    prev_weights: np.ndarray | None = None
+    prev_tickers: list[str] = []
 
-    for d in sorted(returns_by_date):
-        period_entries = returns_by_date[d]
-        period_return = sum(ic_weights.get(name, 0.0) * ret for name, ret in period_entries)
+    for rebal_date in rebal_dates:
+        built = _build_cross_section_at_date(rebal_date, store, cfg, signal_names_list)
+        if built is None:
+            continue
+        cs, tickers = built
+
+        # Compute alpha from combined signal scores.
+        signal_scores: dict[str, pl.Series] = {}
+        for name in signal_names_list:
+            try:
+                signal_scores[name] = get_signal(name).fn(cs)
+            except Exception:
+                pass
+        if not signal_scores:
+            continue
+
+        alpha = combine(
+            signal_scores,
+            ic_weights={n: ic_weights.get(n, 0.0) for n in signal_scores},
+            config=CombinerConfig(method="ic_weighted", min_coverage=10),
+        )
+
+        # Build risk model from 252 trading days up to rebal_date.
+        lookback_start = rebal_date - timedelta(days=400)
+        prices_panel = store.query(
+            "SELECT ticker, date, log_return_1d FROM prices "
+            "WHERE ticker IN ({t}) AND date BETWEEN '{s}' AND '{e}' ORDER BY date".format(
+                t=", ".join(f"'{tk}'" for tk in tickers),
+                s=lookback_start,
+                e=rebal_date,
+            )
+        )
+        if prices_panel.is_empty():
+            continue
+        try:
+            risk_model = estimate_covariance(build_returns_wide(prices_panel, tickers), tickers, n_factors=10)
+        except Exception:
+            continue
+
+        # Align alpha to risk model ticker order.
+        alpha_map = dict(zip(cs["ticker"].to_list(), alpha.to_list()))
+        alpha_aligned = pl.Series(
+            "alpha",
+            [alpha_map.get(t) for t in risk_model.tickers],
+            dtype=pl.Float64,
+        )
+
+        # Align previous weights to current tickers (universe changes each period).
+        aligned_prev: np.ndarray | None = None
+        if prev_weights is not None and prev_tickers:
+            prev_map = dict(zip(prev_tickers, prev_weights))
+            aligned_prev = np.array([prev_map.get(t, 0.0) for t in risk_model.tickers])
+
+        try:
+            result = optimize(
+                alpha_aligned,
+                risk_model,
+                config=PortfolioConfig(
+                    objective=getattr(request, "objective", "max_sharpe"),
+                    lambda_risk=getattr(request, "lambda_risk", 1.0),
+                    max_weight=getattr(request, "max_weight", 0.05),
+                    cost_bps=cfg.cost_bps,
+                ),
+                prev_weights=aligned_prev,
+            )
+        except Exception:
+            continue
+
+        prev_weights = result.weights
+        prev_tickers = risk_model.tickers
+
+        # Fetch forward returns for this rebalance date.
+        if not risk_model.tickers:
+            continue
+        fwd = store.query(
+            "SELECT ticker, forward_return_21d FROM prices "
+            "WHERE date = '{d}' AND ticker IN ({t})".format(
+                d=rebal_date,
+                t=", ".join(f"'{tk}'" for tk in risk_model.tickers),
+            )
+        )
+        if fwd.is_empty():
+            continue
+        fwd_map = dict(zip(fwd["ticker"].to_list(), fwd["forward_return_21d"].to_list()))
+        fwd_returns = np.array([fwd_map.get(t, 0.0) or 0.0 for t in risk_model.tickers])
+
+        # Almgren-Chriss transaction cost on actual portfolio turnover.
+        if aligned_prev is not None:
+            turnover = float(np.abs(result.weights - aligned_prev).sum()) / 2.0
+        else:
+            turnover = float(np.abs(result.weights).sum()) / 2.0
+        cost = (turnover * cfg.cost_bps + turnover ** 1.5 * cfg.impact_bps) / 10_000
+
+        period_return = float(result.weights @ fwd_returns) - cost
         equity *= 1.0 + period_return
         net_returns.append(period_return)
         equity_curve.append({
-            "date": d,
+            "date": rebal_date,
             "portfolio_return": period_return,
             "cumulative_return": equity - 1.0,
         })
 
     series = pl.Series(net_returns) if net_returns else pl.Series([], dtype=pl.Float64)
-    sharpe = float(compute_sharpe(series)) if net_returns else None
-    drawdown = float(compute_max_drawdown(series)) if net_returns else None
-    total_return = equity - 1.0 if equity_curve else None
-
     return {
         "signals": signal_names_list,
         "start": cfg.start,
         "end": cfg.end,
         "n_periods": len(equity_curve),
-        "sharpe_net": sharpe,
-        "max_drawdown": drawdown,
-        "total_return": total_return,
+        "sharpe_net": float(compute_sharpe(series)) if net_returns else None,
+        "max_drawdown": float(compute_max_drawdown(series)) if net_returns else None,
+        "total_return": equity - 1.0 if equity_curve else None,
         "ic_weights": ic_weights,
         "equity_curve": equity_curve,
     }
