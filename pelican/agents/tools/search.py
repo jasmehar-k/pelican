@@ -69,17 +69,21 @@ def _parse_entry(entry: ET.Element, namespace: dict[str, str]) -> SearchResult:
 _RETRY_DELAYS = (5, 15, 30)   # seconds to wait before each retry attempt
 
 
-def _build_query(query: str) -> str:
+def _build_query(query: str, use_or: bool = False) -> str:
     """Scope each word of the user query to abstract/title fields.
 
     Plain keyword search matches anywhere in arXiv metadata, which pulls in
     papers where e.g. "quality" appears in a CS engineering context.  Using
     abs:/ti: field selectors keeps results anchored to the paper's content.
+
+    use_or=True relaxes the inter-word connector from AND to OR, trading
+    precision for recall when an AND query returns too few results.
     """
     words = [w for w in re.split(r"\s+", query.strip()) if len(w) > 2]
     if not words:
         words = [query]
-    field_clauses = " AND ".join(f"(abs:{w} OR ti:{w})" for w in words)
+    connector = " OR " if use_or else " AND "
+    field_clauses = connector.join(f"(abs:{w} OR ti:{w})" for w in words)
     return f"({field_clauses}) AND ({ARXIV_CATEGORIES})"
 
 
@@ -97,10 +101,8 @@ def _relevance_sort(papers: list[SearchResult], words: list[str]) -> list[Search
     return sorted(papers, key=score, reverse=True)
 
 
-def search_arxiv(query: str, max_results: int = 10) -> list[SearchResult]:
-    _rate_limit()
-    words = [w for w in re.split(r"\s+", query.strip()) if len(w) > 2] or [query]
-    search_query = _build_query(query)
+def _fetch_arxiv(search_query: str, max_results: int) -> list[SearchResult]:
+    """Single HTTP fetch from the arXiv API; raises on error."""
     params = {
         "search_query": search_query,
         "start": 0,
@@ -108,44 +110,60 @@ def search_arxiv(query: str, max_results: int = 10) -> list[SearchResult]:
         "sortBy": "relevance",
         "sortOrder": "descending",
     }
+    response = httpx.get(ARXIV_API_URL, params=params, timeout=60)
+    response.raise_for_status()
+    root = ET.fromstring(response.text)
+    namespace = {"atom": "http://www.w3.org/2005/Atom"}
+    entries = root.findall("atom:entry", namespace)
+    return [_parse_entry(e, namespace) for e in entries] if entries else []
+
+
+def search_arxiv(query: str, max_results: int = 10) -> list[SearchResult]:
+    _rate_limit()
+    words = [w for w in re.split(r"\s+", query.strip()) if len(w) > 2] or [query]
 
     last_exc: Exception | None = None
     is_rate_limited = False
-    for attempt, backoff in enumerate((*_RETRY_DELAYS, None), start=1):
-        try:
-            response = httpx.get(ARXIV_API_URL, params=params, timeout=60)
-            response.raise_for_status()
-            root = ET.fromstring(response.text)
-            namespace = {"atom": "http://www.w3.org/2005/Atom"}
-            entries = root.findall("atom:entry", namespace)
-            papers = [_parse_entry(e, namespace) for e in entries] if entries else []
-            ranked = _relevance_sort(papers, words)
-            # Drop papers where not a single query keyword appears anywhere
-            filtered = [
-                p for p in ranked
-                if any(w.lower() in p["title"].lower() or w.lower() in p["abstract"].lower()
-                       for w in words)
-            ]
-            return filtered or ranked  # fallback to unfiltered if everything gets dropped
-        except (httpx.TimeoutException, httpx.NetworkError) as exc:
-            last_exc = exc
-            if backoff is not None:
-                time.sleep(backoff)
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code == 429:
+
+    # Try AND first (precise), fall back to OR if fewer than 3 papers come back.
+    for use_or in (False, True):
+        search_query = _build_query(query, use_or=use_or)
+        for attempt, backoff in enumerate((*_RETRY_DELAYS, None), start=1):
+            try:
+                papers = _fetch_arxiv(search_query, max_results)
+                ranked = _relevance_sort(papers, words)
+                filtered = [
+                    p for p in ranked
+                    if any(w.lower() in p["title"].lower() or w.lower() in p["abstract"].lower()
+                           for w in words)
+                ]
+                results = filtered or ranked
+                # Require ≥ 3 papers from AND before accepting; fewer means
+                # the query is too restrictive — break out to try OR.
+                if len(results) >= 3 or use_or:
+                    return results
+                break
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
                 last_exc = exc
-                is_rate_limited = True
                 if backoff is not None:
                     time.sleep(backoff)
-            else:
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 429:
+                    last_exc = exc
+                    is_rate_limited = True
+                    if backoff is not None:
+                        time.sleep(backoff)
+                else:
+                    raise
+            except Exception:
                 raise
-        except Exception:
-            raise
 
     if is_rate_limited:
         # arXiv rate-limited us through all retries — return empty so the
         # researcher can fall back to previously stored papers or theme alone.
         return []
-    raise httpx.ReadTimeout(
-        f"arXiv search timed out after {len(_RETRY_DELAYS) + 1} attempts"
-    ) from last_exc
+    if last_exc:
+        raise httpx.ReadTimeout(
+            f"arXiv search timed out after {len(_RETRY_DELAYS) + 1} attempts"
+        ) from last_exc
+    return []
