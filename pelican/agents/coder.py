@@ -95,6 +95,10 @@ def _build_user_message(
             f"\nPrevious code attempt(s) failed with these errors:\n{error_block}"
             "\n\nPlease fix all listed issues in your next implementation."
         )
+    parts.append(
+        "\nRespond with ONLY a single ```python``` code block containing the "
+        "compute_signal function. No explanation, no prose — just the code block."
+    )
     return "\n".join(parts)
 
 

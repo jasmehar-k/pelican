@@ -89,6 +89,9 @@ def _build_multi_user_message(
         "Return this structure — one block per signal:",
         "",
         numbered,
+        "",
+        "IMPORTANT: Begin your response immediately with HYPOTHESIS_1: — no introduction, "
+        "no preamble, no explanation. Fill in every field. Do not leave any field blank.",
     ]
     return "\n".join(parts)
 
