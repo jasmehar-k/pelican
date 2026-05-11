@@ -120,10 +120,10 @@ def get_hypotheses(
     n: int = 3,
     model: str | None = None,
     existing_signals: list[str] | None = None,
-) -> tuple[list[SearchResult], list[dict]]:
+) -> tuple[list[SearchResult], list[SearchResult], list[dict]]:
     """Search arXiv once and return up to *n* distinct signal hypotheses.
 
-    Returns (papers, hypotheses).  Each hypothesis is a dict with keys:
+    Returns (papers, context, hypotheses).  Each hypothesis is a dict with keys:
         hypothesis   — 2-3 sentence economic rationale
         data_fields  — list of column names to use
         signal_name  — short snake_case identifier
@@ -155,7 +155,7 @@ def get_hypotheses(
 
     if not context:
         log.warning("researcher: no papers found", theme=theme)
-        return papers, []
+        return papers, context, []
 
     llm = _get_llm(model)
     system_prompt = _load_system_prompt()
@@ -181,7 +181,7 @@ def get_hypotheses(
             )
 
     log.info("researcher: hypotheses extracted", n=len(hypotheses), theme=theme)
-    return papers, hypotheses
+    return papers, context, hypotheses
 
 
 
@@ -194,12 +194,14 @@ def _make_researcher_node(model: str | None = None):
         existing = list_signals()
 
         try:
-            papers, hypotheses = get_hypotheses(theme, n=3, model=model, existing_signals=existing)
+            papers, context, hypotheses = get_hypotheses(theme, n=3, model=model, existing_signals=existing)
         except Exception as exc:
             log.warning("researcher: get_hypotheses failed", error=str(exc), theme=theme)
-            papers, hypotheses = [], []
+            papers, context, hypotheses = [], [], []
 
-        arxiv_ids: list[str] = [p["arxiv_id"] for p in papers[:5]]
+        # Build arxiv_ids from context (includes stored papers) so the frontend
+        # badge reflects what the researcher actually used, not just live hits.
+        arxiv_ids: list[str] = [p["arxiv_id"] for p in (context or papers)[:5]]
         # Hypothesis 0 is the default for the first coder attempt; later retries
         # will pick subsequent hypotheses via retry_count (see coder node).
         signal_hypothesis: str | None = hypotheses[0]["hypothesis"] if hypotheses else None
