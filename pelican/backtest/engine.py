@@ -228,16 +228,25 @@ def run_backtest(
             cs = cs.join(pit_news, on="ticker", how="left")
 
         # Point-in-time join of earnings surprises: most recent announcement <= rebal_date.
-        if earnings_panel is not None and not earnings_panel.is_empty():
-            pit_earnings = (
-                earnings_panel
-                .filter(pl.col("date") <= rebal_date)
-                .sort("date")
-                .group_by("ticker")
-                .last()
-                .drop("date")
-            )
-            cs = cs.join(pit_earnings, on="ticker", how="left")
+        if earnings_panel is not None:
+            if not earnings_panel.is_empty():
+                pit_earnings = (
+                    earnings_panel
+                    .filter(pl.col("date") <= rebal_date)
+                    .sort("date")
+                    .group_by("ticker")
+                    .last()
+                    .drop("date")
+                )
+            else:
+                pit_earnings = earnings_panel
+            if not pit_earnings.is_empty():
+                cs = cs.join(pit_earnings, on="ticker", how="left")
+            else:
+                earn_cols = ["surprise_pct", "reported_eps", "estimated_eps"]
+                cs = cs.with_columns([
+                    pl.lit(None).cast(pl.Float64).alias(c) for c in earn_cols
+                ])
 
         # Point-in-time join of fundamentals: use the most recent row whose
         # available_date <= rebal_date so no future data leaks in.
