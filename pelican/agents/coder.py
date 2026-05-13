@@ -21,6 +21,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from langchain_core.callbacks import BaseCallbackHandler
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from pelican.agents.state import AgentState
 from pelican.agents.tools.code_exec import execute_signal_code
@@ -29,6 +30,10 @@ from pelican.utils.logging import get_logger
 
 MAX_RETRIES = 3
 _BACKOFF_SECONDS = (10, 20, 40)
+
+# Prefill the assistant turn so the model is forced to continue inside the
+# code block rather than writing prose before it.
+_CODER_PREFIX = "```python\ndef compute_signal(df: pl.DataFrame) -> pl.Series:\n    "
 
 log = get_logger(__name__)
 
@@ -95,10 +100,6 @@ def _build_user_message(
             f"\nPrevious code attempt(s) failed with these errors:\n{error_block}"
             "\n\nPlease fix all listed issues in your next implementation."
         )
-    parts.append(
-        "\nRespond with ONLY a single ```python``` code block containing the "
-        "compute_signal function. No explanation, no prose — just the code block."
-    )
     return "\n".join(parts)
 
 
@@ -149,10 +150,17 @@ def _make_coder_node(
 
             try:
                 response = llm.invoke([
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_msg},
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=user_msg),
+                    AIMessage(content=_CODER_PREFIX),
                 ])
-                raw = response.content
+                # If the model ignored the prefill and returned a full code
+                # block itself, use the response as-is; otherwise prepend the
+                # prefix so _extract_code can find the block boundary.
+                if "```python" in response.content:
+                    raw = response.content
+                else:
+                    raw = _CODER_PREFIX + response.content
             except Exception as exc:
                 if _is_rate_limit(exc) and attempt < MAX_RETRIES:
                     wait = _BACKOFF_SECONDS[attempt - 1]

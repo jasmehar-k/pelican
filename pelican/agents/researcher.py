@@ -14,6 +14,8 @@ from pelican.utils.logging import get_logger
 
 log = get_logger(__name__)
 
+_RESEARCHER_PREFIX = "HYPOTHESIS_1: "
+
 
 def _get_llm(
     model: str | None = None,
@@ -89,9 +91,6 @@ def _build_multi_user_message(
         "Return this structure — one block per signal:",
         "",
         numbered,
-        "",
-        "IMPORTANT: Begin your response immediately with HYPOTHESIS_1: — no introduction, "
-        "no preamble, no explanation. Fill in every field. Do not leave any field blank.",
     ]
     return "\n".join(parts)
 
@@ -162,16 +161,18 @@ def get_hypotheses(
 
     llm = _get_llm(model)
     system_prompt = _load_system_prompt()
+    user_msg = _build_multi_user_message(theme, context, n, existing_signals)
     response = llm.invoke([
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": _build_multi_user_message(theme, context, n, existing_signals)},
+        {"role": "user", "content": user_msg},
+        {"role": "assistant", "content": _RESEARCHER_PREFIX},
     ])
-    hypotheses = _parse_multi_response(response.content, n)
+    hypotheses = _parse_multi_response(_RESEARCHER_PREFIX + response.content, n)
     if not hypotheses:
         log.warning(
             "researcher: no hypotheses parsed — raw LLM response below",
             theme=theme,
-            response=response.content[:800],
+            response=(_RESEARCHER_PREFIX + response.content)[:800],
         )
 
     for paper in context:
