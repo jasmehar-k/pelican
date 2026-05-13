@@ -354,7 +354,7 @@ class TestCoderNode:
         with patch("pelican.agents.coder._get_llm", return_value=mock_llm):
             coder_node(state)
 
-        user_msg = captured_messages[0][1]["content"]
+        user_msg = captured_messages[0][1].content
         assert "some prior error" in user_msg
 
     def test_exhausts_retries_returns_no_code(self):

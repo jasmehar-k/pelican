@@ -375,7 +375,7 @@ class TestGetHypotheses:
             patch("pelican.agents.researcher.find_similar", return_value=[]),
             patch("pelican.agents.researcher._get_llm", return_value=self._mock_llm(response)),
         ):
-            papers, hypotheses = get_hypotheses("earnings quality", n=3)
+            papers, _, hypotheses = get_hypotheses("earnings quality", n=3)
 
         assert papers == self.PAPERS
         assert len(hypotheses) == 3
@@ -396,7 +396,7 @@ class TestGetHypotheses:
             patch("pelican.agents.researcher.find_similar", return_value=[]),
             patch("pelican.agents.researcher._get_llm", return_value=self._mock_llm(response)),
         ):
-            _, hypotheses = get_hypotheses("momentum", n=1)
+            _, _, hypotheses = get_hypotheses("momentum", n=1)
 
         h = hypotheses[0]
         assert "hypothesis" in h
@@ -407,7 +407,7 @@ class TestGetHypotheses:
     def test_empty_papers_returns_no_hypotheses(self, tmp_path, monkeypatch):
         _configure_env(monkeypatch, tmp_path)
         with patch("pelican.agents.researcher.search_arxiv", return_value=[]):
-            papers, hypotheses = get_hypotheses("anything", n=3)
+            papers, _, hypotheses = get_hypotheses("anything", n=3)
 
         assert papers == []
         assert hypotheses == []
@@ -601,7 +601,7 @@ class TestRetrieveForTheme:
             patch("pelican.agents.researcher.store_paper"),
             patch("pelican.agents.researcher.has_paper", return_value=True),
         ):
-            papers, hypotheses = get_hypotheses("momentum", n=1)
+            papers, _, hypotheses = get_hypotheses("momentum", n=1)
 
         # context was supplemented — LLM received 2 papers not 1
         assert len(hypotheses) == 1
