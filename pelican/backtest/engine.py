@@ -216,16 +216,22 @@ def run_backtest(
             cs = cs.join(pit_edgar, on="ticker", how="left")
 
         # Point-in-time join of news sentiment: most recent date <= rebal_date.
-        if news_panel is not None and not news_panel.is_empty():
-            pit_news = (
-                news_panel
-                .filter(pl.col("date") <= rebal_date)
-                .sort("date")
-                .group_by("ticker")
-                .last()
-                .drop("date")
-            )
-            cs = cs.join(pit_news, on="ticker", how="left")
+        if news_panel is not None:
+            if not news_panel.is_empty():
+                pit_news = (
+                    news_panel
+                    .filter(pl.col("date") <= rebal_date)
+                    .sort("date")
+                    .group_by("ticker")
+                    .last()
+                    .drop("date")
+                )
+            else:
+                pit_news = news_panel
+            if not pit_news.is_empty():
+                cs = cs.join(pit_news, on="ticker", how="left")
+            else:
+                cs = cs.with_columns([pl.lit(None).cast(pl.Float64).alias("avg_score")])
 
         # Point-in-time join of earnings surprises: most recent announcement <= rebal_date.
         if earnings_panel is not None:
