@@ -21,7 +21,7 @@ type RunResult = {
 	sharpe_net: number | null
 }
 
-const NODE_ORDER = ['researcher', 'coder', 'critic']
+const NODE_ORDER = ['theme_discoverer', 'researcher', 'coder', 'critic']
 const EMPTY_NODE: NodeState = { status: 'idle', text: '', data: {} }
 
 function badgeClass(status: NodeState['status']): string {
@@ -29,6 +29,19 @@ function badgeClass(status: NodeState['status']): string {
 	if (status === 'error') return 'chip chip-danger'
 	if (status === 'running') return 'chip chip-warn'
 	return 'chip'
+}
+
+function ThemeDiscovererBody({ node }: { node: NodeState }) {
+	if (node.status === 'idle') return null
+	if (node.status === 'running') return <p className="node-idle">Browsing recent q-fin papers…</p>
+	const theme = typeof node.data.theme === 'string' ? node.data.theme : ''
+	return (
+		<div className="node-body">
+			{theme
+				? <p className="node-detail">{theme}</p>
+				: <p className="node-idle">No theme discovered — using fallback.</p>}
+		</div>
+	)
 }
 
 function ResearcherBody({ node }: { node: NodeState }) {
@@ -91,6 +104,7 @@ function CriticBody({ node }: { node: NodeState }) {
 }
 
 function NodeBody({ name, node }: { name: string; node: NodeState }) {
+	if (name === 'theme_discoverer') return <ThemeDiscovererBody node={node} />
 	if (name === 'researcher') return <ResearcherBody node={node} />
 	if (name === 'coder') return <CoderBody node={node} />
 	if (name === 'critic') return <CriticBody node={node} />
@@ -116,6 +130,7 @@ export function AgentLog({
 	const [error, setError] = useState<string | null>(null)
 	const [runResult, setRunResult] = useState<RunResult | null>(null)
 	const [nodes, setNodes] = useState<Record<string, NodeState>>(() => ({
+		theme_discoverer: { ...EMPTY_NODE },
 		researcher: { ...EMPTY_NODE },
 		coder: { ...EMPTY_NODE },
 		critic: { ...EMPTY_NODE },
@@ -201,12 +216,13 @@ export function AgentLog({
 		setError(null)
 		setRunResult(null)
 		setNodes({
+			theme_discoverer: { ...EMPTY_NODE },
 			researcher: { ...EMPTY_NODE },
 			coder: { ...EMPTY_NODE },
 			critic: { ...EMPTY_NODE },
 		})
 		try {
-			const response = await startAgentRun({ theme, with_researcher: true })
+			const response = await startAgentRun({ theme: theme.trim() || null, with_researcher: true })
 			setRunId(response.run_id)
 			onRunCreated?.(response.run_id)
 		} catch (startError) {
@@ -221,6 +237,7 @@ export function AgentLog({
 		setError(null)
 		setRunId(null)
 		setNodes({
+			theme_discoverer: { ...EMPTY_NODE },
 			researcher: { ...EMPTY_NODE },
 			coder: { ...EMPTY_NODE },
 			critic: { ...EMPTY_NODE },
@@ -245,7 +262,7 @@ export function AgentLog({
 				<input
 					value={theme}
 					onChange={(event) => setTheme(event.target.value)}
-					placeholder="Describe the theme to research"
+					placeholder="Theme to research (leave blank to auto-discover)"
 					disabled={isRunning}
 				/>
 				{isFinished ? (
@@ -290,7 +307,7 @@ export function AgentLog({
 						</p>
 					) : (
 						<p className="run-result-hint">
-							Thresholds: IC t-stat ≥ 0.5 and net Sharpe ≥ 0.3.
+							Thresholds: IC t-stat ≥ 1.5 and net Sharpe ≥ 0.3.
 							Try a more specific theme, or a different economic mechanism.
 						</p>
 					)}
@@ -298,10 +315,13 @@ export function AgentLog({
 			) : null}
 
 			<div className="node-grid">
-				{orderedNodes.map((node) => (
+				{orderedNodes
+					// hide theme_discoverer card when it was never activated (user supplied a theme)
+					.filter((node) => node.name !== 'theme_discoverer' || node.status !== 'idle')
+					.map((node) => (
 					<article key={node.name} className={`node-card node-${node.status}`}>
 						<div className="node-card-head">
-							<h3>{node.name}</h3>
+							<h3>{node.name.replace(/_/g, ' ')}</h3>
 							<span className={badgeClass(node.status)}>{node.status}</span>
 						</div>
 						<NodeBody name={node.name} node={node} />

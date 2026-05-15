@@ -1,7 +1,7 @@
 const API_BASE = '/api'
 
 export type AgentRunRequest = {
-	theme: string
+	theme?: string | null   // null or omitted = auto-discover theme from recent arXiv papers
 	model?: string | null
 	with_researcher?: boolean
 	start?: string
