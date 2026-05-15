@@ -17,7 +17,7 @@ def _default_end() -> date:
 
 
 class AgentRunRequest(BaseModel):
-    theme: str
+    theme: str | None = None    # None = auto-discover theme from recent arXiv papers
     model: str | None = None
     with_researcher: bool = True
     start: date = Field(default_factory=_default_start)

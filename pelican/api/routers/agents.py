@@ -35,6 +35,7 @@ _ALL_SAFE_KEYS = {
 
 # Keys each node actually owns — prevents stale metrics from bleeding through.
 _NODE_KEYS: dict[str, set[str]] = {
+    "theme_discoverer": {"theme"},
     "researcher": {"theme", "arxiv_ids", "signal_hypothesis", "signal_name"},
     "coder":      {"theme", "retry_count", "errors"},
     "critic":     {"theme", "decision", "feedback", "ic_tstat", "sharpe_net", "retry_count"},
@@ -98,6 +99,9 @@ def _run_graph_thread(
     # Wrap the entire body so the None sentinel is always sent even if
     # build_graph / coerce_state raise before the inner try block.
     try:
+        with_theme_discoverer = req.theme is None
+        effective_theme = req.theme or ""
+
         config = BacktestConfig(start=req.start, end=req.end)
         graph = build_graph(
             store, config,
@@ -105,10 +109,14 @@ def _run_graph_thread(
             on_token=on_token,
             on_attempt_start=on_attempt_start,
             with_researcher=req.with_researcher,
+            with_theme_discoverer=with_theme_discoverer,
         )
-        state = coerce_state({"theme": req.theme, "run_id": run_id})
+        state = coerce_state({"theme": effective_theme, "run_id": run_id})
         final_state: dict = dict(state)
 
+        if with_theme_discoverer:
+            _put({"event": "node_start", "node": "theme_discoverer",
+                  "data": {}, "timestamp": _ts()})
         if req.with_researcher:
             _put({"event": "node_start", "node": "researcher",
                   "data": {}, "timestamp": _ts()})

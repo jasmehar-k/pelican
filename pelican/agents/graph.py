@@ -26,6 +26,7 @@ from pelican.agents.coder import _make_coder_node
 from pelican.agents.critic import _make_critic_node
 from pelican.agents.reporter import _make_reporter_node
 from pelican.agents.researcher import _make_researcher_node
+from pelican.agents.theme_discoverer import _make_theme_discoverer_node
 from pelican.agents.state import AgentState
 from pelican.backtest.engine import BacktestConfig
 
@@ -51,6 +52,7 @@ def build_graph(
     on_token: Callable[[str], None] | None = None,
     on_attempt_start: Callable[[int], None] | None = None,
     with_researcher: bool = True,
+    with_theme_discoverer: bool = False,
 ):
     """Build and compile the agent graph.
 
@@ -72,6 +74,8 @@ def build_graph(
 
     builder: StateGraph = StateGraph(AgentState)
 
+    if with_theme_discoverer:
+        builder.add_node("theme_discoverer", _make_theme_discoverer_node(model=model))
     if with_researcher:
         builder.add_node("researcher", _make_researcher_node(model=model))
     builder.add_node("coder", _make_coder_node(
@@ -82,7 +86,14 @@ def build_graph(
     builder.add_node("critic", _make_critic_node(store, backtest_config))
     builder.add_node("reporter", _make_reporter_node(store, model=model))
 
-    if with_researcher:
+    if with_theme_discoverer and with_researcher:
+        builder.add_edge(START, "theme_discoverer")
+        builder.add_edge("theme_discoverer", "researcher")
+        builder.add_edge("researcher", "coder")
+    elif with_theme_discoverer:
+        builder.add_edge(START, "theme_discoverer")
+        builder.add_edge("theme_discoverer", "coder")
+    elif with_researcher:
         builder.add_edge(START, "researcher")
         builder.add_edge("researcher", "coder")
     else:

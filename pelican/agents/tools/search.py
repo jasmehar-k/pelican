@@ -101,13 +101,13 @@ def _relevance_sort(papers: list[SearchResult], words: list[str]) -> list[Search
     return sorted(papers, key=score, reverse=True)
 
 
-def _fetch_arxiv(search_query: str, max_results: int) -> list[SearchResult]:
+def _fetch_arxiv(search_query: str, max_results: int, sort_by: str = "relevance") -> list[SearchResult]:
     """Single HTTP fetch from the arXiv API; raises on error."""
     params = {
         "search_query": search_query,
         "start": 0,
         "max_results": max_results,
-        "sortBy": "relevance",
+        "sortBy": sort_by,
         "sortOrder": "descending",
     }
     response = httpx.get(ARXIV_API_URL, params=params, timeout=60)
@@ -116,6 +116,20 @@ def _fetch_arxiv(search_query: str, max_results: int) -> list[SearchResult]:
     namespace = {"atom": "http://www.w3.org/2005/Atom"}
     entries = root.findall("atom:entry", namespace)
     return [_parse_entry(e, namespace) for e in entries] if entries else []
+
+
+_RECENT_QUERY = "cat:q-fin.PM OR cat:q-fin.ST OR cat:q-fin.TR OR cat:q-fin.GN OR cat:cs.LG"
+
+
+def search_arxiv_recent(n: int = 15) -> list[SearchResult]:
+    """Fetch the *n* most recently submitted q-fin papers, no keyword filter."""
+    _rate_limit()
+    try:
+        return _fetch_arxiv(_RECENT_QUERY, n, sort_by="submittedDate")
+    except Exception as exc:
+        from pelican.utils.logging import get_logger
+        get_logger(__name__).warning("search_arxiv_recent failed", error=str(exc))
+        return []
 
 
 def search_arxiv(query: str, max_results: int = 10) -> list[SearchResult]:
