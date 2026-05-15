@@ -162,18 +162,22 @@ def get_hypotheses(
     llm = _get_llm(model)
     system_prompt = _load_system_prompt()
     user_msg = _build_multi_user_message(theme, context, n, existing_signals)
-    response = llm.invoke([
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_msg},
-        {"role": "assistant", "content": _RESEARCHER_PREFIX},
-    ])
-    hypotheses = _parse_multi_response(_RESEARCHER_PREFIX + response.content, n)
-    if not hypotheses:
-        log.warning(
-            "researcher: no hypotheses parsed — raw LLM response below",
-            theme=theme,
-            response=(_RESEARCHER_PREFIX + response.content)[:800],
-        )
+    try:
+        response = llm.invoke([
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_msg},
+            {"role": "assistant", "content": _RESEARCHER_PREFIX},
+        ])
+        hypotheses = _parse_multi_response(_RESEARCHER_PREFIX + response.content, n)
+        if not hypotheses:
+            log.warning(
+                "researcher: no hypotheses parsed — raw LLM response below",
+                theme=theme,
+                response=(_RESEARCHER_PREFIX + response.content)[:800],
+            )
+    except Exception as exc:
+        log.warning("researcher: LLM call failed — returning papers without hypotheses", error=str(exc), theme=theme)
+        hypotheses = []
 
     for paper in context:
         if not has_paper(paper["arxiv_id"]):
