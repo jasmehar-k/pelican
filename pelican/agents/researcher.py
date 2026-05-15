@@ -55,8 +55,15 @@ def _format_papers(papers: list[SearchResult]) -> str:
 
 
 def _parse_flag(text: str, key: str) -> str | None:
-    match = re.search(rf"^{key}:\s*(.+)$", text, re.MULTILINE | re.IGNORECASE)
-    return match.group(1).strip() if match else None
+    # Find the key line, then capture everything until the next numbered field or end of text.
+    # This handles content on the same line OR on subsequent lines.
+    match = re.search(rf"^{key}:\s*", text, re.MULTILINE | re.IGNORECASE)
+    if not match:
+        return None
+    rest = text[match.end():]
+    boundary = re.search(r"^[A-Z][A-Z_]+_\d+\s*:", rest, re.MULTILINE)
+    content = rest[: boundary.start()].strip() if boundary else rest.strip()
+    return content or None
 
 
 def _build_multi_user_message(
@@ -105,7 +112,7 @@ def _parse_multi_response(text: str, n: int) -> list[dict]:
         is_template = h and ("<" in h or h.startswith("..."))
         is_fragment = h and (
             len(h.split()) < 10                          # fewer than 10 words
-            or not any(c in h for c in ".!?")           # no sentence-ending punctuation
+            and not any(c in h for c in ".!?")          # AND no sentence-ending punctuation
         )
         is_stub_name = sn in (None, "short_snake_case", f"signal_{i}_name")
         if h and not is_template and not is_fragment:
@@ -168,12 +175,17 @@ def get_hypotheses(
             {"role": "user", "content": user_msg},
             {"role": "assistant", "content": _RESEARCHER_PREFIX},
         ])
-        hypotheses = _parse_multi_response(_RESEARCHER_PREFIX + response.content, n)
+        # Some providers echo the prefill tokens back in response.content; others
+        # omit them.  Normalise: ensure HYPOTHESIS_1: appears exactly once.
+        raw = response.content
+        if not re.match(r"HYPOTHESIS_1\s*:", raw.lstrip(), re.IGNORECASE):
+            raw = _RESEARCHER_PREFIX + raw
+        hypotheses = _parse_multi_response(raw, n)
         if not hypotheses:
             log.warning(
                 "researcher: no hypotheses parsed — raw LLM response below",
                 theme=theme,
-                response=(_RESEARCHER_PREFIX + response.content)[:800],
+                response=raw[:800],
             )
     except Exception as exc:
         log.warning("researcher: LLM call failed — returning papers without hypotheses", error=str(exc), theme=theme)
