@@ -164,12 +164,9 @@ def _build_cross_section_at_date(
     prices = store.query(
         "SELECT ticker, date, open, high, low, close, volume, log_return_1d, forward_return_21d "
         "FROM prices "
-        "WHERE ticker IN ({tickers}) AND date BETWEEN '{start}' AND '{end}' "
-        "ORDER BY ticker, date".format(
-            tickers=", ".join(f"'{t}'" for t in tickers),
-            start=lookback_start,
-            end=rebal_date,
-        )
+        "WHERE ticker = ANY(?) AND date BETWEEN ? AND ? "
+        "ORDER BY ticker, date",
+        [tickers, lookback_start, rebal_date],
     )
     if prices.is_empty():
         return None
@@ -185,9 +182,10 @@ def _build_cross_section_at_date(
         try:
             fund = store.query(
                 "SELECT f.* FROM (SELECT ticker, MAX(available_date) AS best_avail "
-                "FROM fundamentals WHERE available_date <= '{d}' GROUP BY ticker) AS latest "
+                "FROM fundamentals WHERE available_date <= ? GROUP BY ticker) AS latest "
                 "JOIN fundamentals AS f ON f.ticker = latest.ticker "
-                "AND f.available_date = latest.best_avail".format(d=rebal_date)
+                "AND f.available_date = latest.best_avail",
+                [rebal_date],
             )
             if not fund.is_empty():
                 cs = cs.join(fund.drop(["available_date", "period_end"]), on="ticker", how="left")
@@ -198,7 +196,8 @@ def _build_cross_section_at_date(
         try:
             edgar = store.query(
                 "SELECT ticker, filing_date, tone_score, tone_delta FROM edgar_sentiment "
-                "WHERE filing_date <= '{d}' ORDER BY ticker, filing_date".format(d=rebal_date)
+                "WHERE filing_date <= ? ORDER BY ticker, filing_date",
+                [rebal_date],
             )
             if not edgar.is_empty():
                 pit_edgar = (
@@ -216,7 +215,8 @@ def _build_cross_section_at_date(
         try:
             earnings = store.query(
                 "SELECT ticker, date, surprise_pct, reported_eps, estimated_eps "
-                "FROM earnings_surprises WHERE date <= '{d}' ORDER BY ticker, date".format(d=rebal_date)
+                "FROM earnings_surprises WHERE date <= ? ORDER BY ticker, date",
+                [rebal_date],
             )
             if not earnings.is_empty():
                 pit_earnings = (
@@ -295,10 +295,8 @@ def optimize_portfolio(settings: Any, store: Any, request: Any) -> dict[str, Any
 
     prices_panel = store.query(
         "SELECT ticker, date, log_return_1d FROM prices "
-        "WHERE date BETWEEN '{start}' AND '{end}' ORDER BY date".format(
-            start=rebal_date - timedelta(days=365),
-            end=rebal_date,
-        )
+        "WHERE date BETWEEN ? AND ? ORDER BY date",
+        [rebal_date - timedelta(days=365), rebal_date],
     )
     if prices_panel.is_empty():
         raise ValueError("No price data available for portfolio optimization")
@@ -442,11 +440,8 @@ def run_portfolio_backtest(settings: Any, store: Any, request: Any) -> dict[str,
         lookback_start = rebal_date - timedelta(days=400)
         prices_panel = store.query(
             "SELECT ticker, date, log_return_1d FROM prices "
-            "WHERE ticker IN ({t}) AND date BETWEEN '{s}' AND '{e}' ORDER BY date".format(
-                t=", ".join(f"'{tk}'" for tk in tickers),
-                s=lookback_start,
-                e=rebal_date,
-            )
+            "WHERE ticker = ANY(?) AND date BETWEEN ? AND ? ORDER BY date",
+            [tickers, lookback_start, rebal_date],
         )
         if prices_panel.is_empty():
             continue
@@ -492,10 +487,8 @@ def run_portfolio_backtest(settings: Any, store: Any, request: Any) -> dict[str,
             continue
         fwd = store.query(
             "SELECT ticker, forward_return_21d FROM prices "
-            "WHERE date = '{d}' AND ticker IN ({t})".format(
-                d=rebal_date,
-                t=", ".join(f"'{tk}'" for tk in risk_model.tickers),
-            )
+            "WHERE date = ? AND ticker = ANY(?)",
+            [rebal_date, risk_model.tickers],
         )
         if fwd.is_empty():
             continue

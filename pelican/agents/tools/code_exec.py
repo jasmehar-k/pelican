@@ -10,6 +10,7 @@ so the Coder node can retry without crashing.
 from __future__ import annotations
 
 import ast
+import builtins
 import math
 from typing import Any
 
@@ -18,13 +19,76 @@ import polars as pl
 
 ALLOWED_MODULES: frozenset[str] = frozenset({"polars", "numpy", "math"})
 
-
 _LOOKAHEAD_COLUMNS: frozenset[str] = frozenset({"forward_return_21d"})
+
+# Built-in names that must not appear in generated code — blocked at AST level
+# so the error message is actionable rather than a runtime NameError.
+_BLOCKED_NAMES: frozenset[str] = frozenset({
+    "__import__", "eval", "exec", "compile",
+    "open", "input",
+    "getattr", "setattr", "delattr",
+    "globals", "locals", "vars",
+    "__builtins__", "__loader__", "__spec__",
+})
+
+# Dunder attributes used in common sandbox-escape chains
+# (e.g. ().__class__.__bases__[0].__subclasses__()).
+_BLOCKED_ATTRS: frozenset[str] = frozenset({
+    "__class__", "__bases__", "__subclasses__", "__mro__",
+    "__globals__", "__code__", "__func__", "__self__",
+    "__dict__", "__weakref__", "__init_subclass__",
+})
+
+def _restricted_import(
+    name: str,
+    globals: Any = None,
+    locals: Any = None,
+    fromlist: tuple = (),
+    level: int = 0,
+) -> Any:
+    """Allow only ALLOWED_MODULES; raise ImportError for everything else."""
+    root = name.split(".")[0]
+    if root not in ALLOWED_MODULES:
+        raise ImportError(f"import of '{name}' is not allowed in signal code")
+    return builtins.__import__(name, globals, locals, fromlist, level)
+
+
+# Restricted builtins exposed inside exec().  Excludes eval, exec, open,
+# getattr, setattr, globals, locals, vars, and all dunder names.
+# __import__ is present but wrapped to allow only ALLOWED_MODULES.
+_SAFE_BUILTINS: dict[str, Any] = {
+    name: getattr(builtins, name)
+    for name in (
+        "None", "True", "False", "NotImplemented", "Ellipsis",
+        "abs", "all", "any",
+        "bool", "bytes",
+        "dict", "divmod",
+        "enumerate",
+        "filter", "float", "format", "frozenset",
+        "int", "isinstance", "issubclass", "iter",
+        "len", "list",
+        "map", "max", "min",
+        "next",
+        "object", "ord", "chr", "pow",
+        "range", "repr", "reversed", "round",
+        "set", "slice", "sorted", "str", "sum",
+        "tuple", "type",
+        "zip",
+        # exceptions signal code may legitimately raise or catch
+        "ArithmeticError", "AttributeError", "EOFError", "Exception",
+        "FloatingPointError", "IndexError", "KeyError", "LookupError",
+        "MemoryError", "NameError", "NotImplementedError", "OSError",
+        "OverflowError", "RuntimeError", "StopIteration",
+        "TypeError", "ValueError", "ZeroDivisionError",
+    )
+}
+_SAFE_BUILTINS["__import__"] = _restricted_import
 
 
 def _check_imports(code: str) -> str | None:
-    """Return an error string if the code imports anything outside ALLOWED_MODULES
-    or references any look-ahead columns (prediction targets)."""
+    """Return an error string if the code imports anything outside ALLOWED_MODULES,
+    references look-ahead columns, calls blocked built-ins, or accesses dunder
+    attributes used in sandbox-escape chains."""
     try:
         tree = ast.parse(code)
     except SyntaxError as exc:
@@ -44,6 +108,10 @@ def _check_imports(code: str) -> str | None:
                 f"look-ahead bias: code accesses '{node.value}' "
                 "(prediction target — not available at signal time)"
             )
+        elif isinstance(node, ast.Name) and node.id in _BLOCKED_NAMES:
+            return f"disallowed built-in: '{node.id}'"
+        elif isinstance(node, ast.Attribute) and node.attr in _BLOCKED_ATTRS:
+            return f"disallowed attribute access: '{node.attr}'"
     return None
 
 
@@ -102,7 +170,7 @@ def execute_signal_code(
     if import_err:
         return False, import_err, None
 
-    namespace: dict[str, Any] = {"pl": pl, "np": np, "math": math}
+    namespace: dict[str, Any] = {"__builtins__": _SAFE_BUILTINS, "pl": pl, "np": np, "math": math}
     try:
         exec(compile(code, "<generated>", "exec"), namespace)  # noqa: S102
     except Exception as exc:
