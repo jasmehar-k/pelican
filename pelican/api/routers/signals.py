@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import date
-from typing import Any
 
 import pelican.factors  # noqa: F401 - register factor signals
 from fastapi import APIRouter, HTTPException, Request
@@ -20,10 +20,13 @@ async def list_signals(request: Request, start: date | None = None, end: date | 
     """List all registered signals with their metadata and backtest stats."""
     settings = request.app.state.settings
     store = request.app.state.store
-    return [
-        SignalSummary.model_validate(signal_summary_payload(settings, store, name, start, end))
-        for name in signal_names()
-    ]
+    names = signal_names()
+    loop = asyncio.get_event_loop()
+    payloads = await loop.run_in_executor(
+        None,
+        lambda: [signal_summary_payload(settings, store, n, start, end) for n in names],
+    )
+    return [SignalSummary.model_validate(p) for p in payloads]
 
 
 @router.get("/{signal_name}")
@@ -36,4 +39,9 @@ async def get_signal_summary(request: Request, signal_name: str, start: date | N
 
     settings = request.app.state.settings
     store = request.app.state.store
-    return SignalSummary.model_validate(signal_summary_payload(settings, store, signal_name, start, end))
+    loop = asyncio.get_event_loop()
+    payload = await loop.run_in_executor(
+        None,
+        lambda: signal_summary_payload(settings, store, signal_name, start, end),
+    )
+    return SignalSummary.model_validate(payload)

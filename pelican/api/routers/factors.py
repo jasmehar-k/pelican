@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import date
 
 from fastapi import APIRouter, HTTPException, Request
@@ -28,4 +29,9 @@ async def get_tearsheet(
 
     settings = request.app.state.settings
     store = request.app.state.store
-    return SignalTearsheet.model_validate(build_tearsheet(settings, store, signal_name, start, end))
+    loop = asyncio.get_event_loop()
+    payload = await loop.run_in_executor(
+        None,
+        lambda: build_tearsheet(settings, store, signal_name, start, end),
+    )
+    return SignalTearsheet.model_validate(payload)
