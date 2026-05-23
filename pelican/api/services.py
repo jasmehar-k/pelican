@@ -110,9 +110,25 @@ def signal_summary_payload(settings: Any, store: Any, signal_name: str, start: d
 
 def build_tearsheet(settings: Any, store: Any, signal_name: str, start: date | None = None, end: date | None = None) -> dict[str, Any]:
     cfg = _backtest_config(settings, start, end)
-    result = run_backtest(signal_name, cfg, store)
-    # Build summary inline from the result we already have — avoids a second backtest run.
     spec_payload = signal_spec_payload(signal_name)
+    config_payload = {
+        "start": cfg.start,
+        "end": cfg.end,
+        "cost_bps": cfg.cost_bps,
+        "impact_bps": cfg.impact_bps,
+        "min_universe_size": cfg.min_universe_size,
+        "min_score_coverage": cfg.min_score_coverage,
+        "lookback_calendar_days": cfg.lookback_calendar_days,
+        "quintile_n": cfg.quintile_n,
+    }
+    try:
+        result = run_backtest(signal_name, cfg, store)
+    except Exception as exc:
+        spec_payload["stats"] = None
+        spec_payload["error"] = str(exc)
+        return {"summary": spec_payload, "config": config_payload, "period_returns": [], "ic_series": []}
+
+    # Build summary inline — avoids a second backtest run.
     if result.avg_universe_size < 20:
         spec_payload["stats"] = None
         spec_payload["error"] = (
@@ -135,16 +151,7 @@ def build_tearsheet(settings: Any, store: Any, signal_name: str, start: date | N
         spec_payload["error"] = None
     return {
         "summary": spec_payload,
-        "config": {
-            "start": cfg.start,
-            "end": cfg.end,
-            "cost_bps": cfg.cost_bps,
-            "impact_bps": cfg.impact_bps,
-            "min_universe_size": cfg.min_universe_size,
-            "min_score_coverage": cfg.min_score_coverage,
-            "lookback_calendar_days": cfg.lookback_calendar_days,
-            "quintile_n": cfg.quintile_n,
-        },
+        "config": config_payload,
         "period_returns": result.period_returns.to_dicts(),
         "ic_series": result.ic_series.to_dicts(),
     }
